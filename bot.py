@@ -1,18 +1,11 @@
 import asyncio
 import logging
-from os import getenv
-
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-
-# Импортируем наши роутеры и middleware
 from app.handlers import common
 from app.middlewares.db import DbSessionMiddleware
-
-# Загружаем переменные окружения из .env
-load_dotenv()
+from app.config import DATABASE_URL, BOT_TOKEN  # Импортируем напрямую из app.config
 
 # Настройка логирования
 logging.basicConfig(
@@ -21,55 +14,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 async def main() -> None:
     """Запуск бота и настройка всех компонентов."""
-    
     logger.info("🚀 Запуск бота...")
 
-    # Создаем асинхронный движок для SQLAlchemy
-    database_url = getenv("DATABASE_URL")
-    if not database_url:
+    # Проверки уже выполнены в app/config.py, но можно оставить для логирования
+    if not DATABASE_URL:
         logger.error("❌ DATABASE_URL не найден в переменных окружения!")
+        return
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN не найден в переменных окружения!")
         return
 
     engine = create_async_engine(
-        database_url,
+        DATABASE_URL,
         echo=False,
         pool_size=5,
         max_overflow=10,
         pool_timeout=30,
         pool_recycle=1800
-    ) # echo=True для отладки SQL-запросов
-
+    )
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
-    # Создаем объекты Бота и Диспетчера
-    bot_token = getenv("BOT_TOKEN")
-    if not bot_token:
-        logger.error("❌ BOT_TOKEN не найден в переменных окружения!")
-        return
-
-    bot = Bot(token=bot_token)
+    bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Регистрируем middleware для передачи сессии в хэндлеры
     dp.update.middleware(DbSessionMiddleware(session_pool=session_maker))
-
-    # Регистрируем роутеры
     dp.include_router(common.router)
-    # dp.include_router(group_leader.router)  # <- так вы будете добавлять новые модули
-    # dp.include_router(admin.router)
 
-    # Удаляем вебхук и запускаем polling
     await bot.delete_webhook(drop_pending_updates=True)
-    
     try:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
         await engine.dispose()
-
 
 if __name__ == "__main__":
     try:

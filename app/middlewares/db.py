@@ -1,14 +1,16 @@
+import logging
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from app.db.repository import UserRepo  # Добавьте GroupRepo, если используете
 
+logger = logging.getLogger(__name__)
 
 class DbSessionMiddleware(BaseMiddleware):
-    """Middleware для передачи асинхронной сессии SQLAlchemy в хэндлеры."""
-
-    def __init__(self, session_pool: async_sessionmaker) -> None:
-        """Инициализация middleware с пулом сессий."""
+    """Middleware для передачи асинхронной сессии SQLAlchemy в обработчики событий."""
+    
+    def __init__(self, session_pool: async_sessionmaker):
         super().__init__()
         self.session_pool = session_pool
 
@@ -18,7 +20,14 @@ class DbSessionMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
-        """Передача сессии в обработчик события."""
-        async with self.session_pool() as session:
-            data["session"] = session
-            return await handler(event, data)
+        """Добавляет сессию базы данных и репозитории в data и вызывает обработчик."""
+        try:
+            async with self.session_pool() as session:
+                data["session"] = session
+                data["user_repo"] = UserRepo(session)
+                # Если GroupRepo нужен, раскомментируйте:
+                # data["group_repo"] = GroupRepo(session)
+                return await handler(event, data)
+        except Exception as e:
+            logger.error(f"Ошибка в DbSessionMiddleware: {e}")
+            raise
