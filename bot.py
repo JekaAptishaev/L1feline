@@ -33,7 +33,15 @@ async def main() -> None:
         logger.error("❌ DATABASE_URL не найден в переменных окружения!")
         return
 
-    engine = create_async_engine(database_url, echo=False)  # echo=True для отладки SQL-запросов
+    engine = create_async_engine(
+        database_url,
+        echo=False,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800
+    ) # echo=True для отладки SQL-запросов
+
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
     # Создаем объекты Бота и Диспетчера
@@ -60,6 +68,7 @@ async def main() -> None:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":
