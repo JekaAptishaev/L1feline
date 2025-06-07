@@ -1,3 +1,4 @@
+# app/handlers/calendar.py
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -12,12 +13,13 @@ logger = logging.getLogger(__name__)
 async def show_calendar(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if not user or not user.group_membership or not user.group_membership.is_leader:
-            await message.answer("У вас нет прав для управления событиями.")
+        if not user or not user.group_membership:
+            await message.answer("Вы не состоите в группе.")
             return
 
         group = user.group_membership.group
         events = await group_repo.get_group_events(group.id)
+        logger.info(f"Events retrieved for calendar: {[event.date for event in events]}")
         calendar = get_calendar_keyboard(events)
         await message.answer("Календарь событий:", reply_markup=calendar)
     except Exception as e:

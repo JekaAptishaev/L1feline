@@ -83,7 +83,7 @@ class Invite(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
     group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
     invited_by_user_id = Column(Integer, ForeignKey('users.telegram_id'), nullable=False)
-    invite_token = Column(String(36), unique=True, nullable=False)  # UUID как строка
+    invite_token = Column(String(36), unique=True, nullable=False)  # Убедитесь, что длина 36
     expires_at = Column(Date, nullable=False)
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

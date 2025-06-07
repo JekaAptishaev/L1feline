@@ -131,7 +131,7 @@ async def process_event_importance(message: Message, state: FSMContext, group_re
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(F.text == "📅 Показать календарь")
+'''@router.message(F.text == "📅 Показать календарь")
 async def show_calendar_assistant(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -146,3 +146,4 @@ async def show_calendar_assistant(message: Message, user_repo: UserRepo, group_r
     except Exception as e:
         logger.error(f"Ошибка в show_calendar_assistant: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
+'''

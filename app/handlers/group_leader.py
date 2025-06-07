@@ -6,7 +6,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from app.db.repository import GroupRepo, UserRepo
 from app.keyboards.reply import get_main_menu_leader
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid  # Для генерации уникальных идентификаторов
 
 router = Router()
@@ -152,7 +152,7 @@ async def process_invite_duration(message: Message, state: FSMContext, group_rep
             return
 
         group = user.group_membership.group
-        expiry_date = datetime.now().date() + timedelta(days=duration_days)
+        expiry_date = datetime.now().date() + timedelta(days=duration_days)  # Используем timedelta
         invite_token = await group_repo.create_invite(group.id, user.telegram_id, expiry_date)
         invite_link = f"https://t.me/L1felinebot?start={invite_token}"
 
@@ -164,7 +164,7 @@ async def process_invite_duration(message: Message, state: FSMContext, group_rep
         logger.error(f"Ошибка в process_invite_duration: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при создании приглашения. Попробуйте позже.")
-
+        
 @router.message(CreateEvent.waiting_for_event_name)
 async def process_event_name(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
     try:
