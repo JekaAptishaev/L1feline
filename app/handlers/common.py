@@ -5,7 +5,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from app.db.repository import UserRepo
 from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader
-from app.handlers.group_leader import CreateGroup
+from app.handlers.group_leader import CreateGroup, JoinGroup
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -55,4 +55,18 @@ async def start_create_group(message: Message, state: FSMContext, user_repo: Use
         await message.answer("Отлично! Введите название для вашей новой группы:")
     except Exception as e:
         logger.error(f"Ошибка в start_create_group: {e}")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(F.text == "🔗 Присоединиться по ссылке")
+async def start_join_group(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if user.group_membership:
+            await message.answer("Вы уже состоите в группе. Нельзя присоединиться к другой.")
+            return
+
+        await state.set_state(JoinGroup.waiting_for_invite_link)
+        await message.answer("Введите пригласительную ссылку для присоединения к группе:")
+    except Exception as e:
+        logger.error(f"Ошибка в start_join_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")

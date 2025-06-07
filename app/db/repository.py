@@ -75,3 +75,36 @@ class GroupRepo:
         except Exception as e:
             logger.error(f"Ошибка при создании группы: {e}")
             raise
+
+    async def get_group_by_id(self, group_id: str) -> Group | None:
+        stmt = select(Group).where(Group.id == group_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def add_member(self, group_id: str, user_id: int, is_leader: bool = False):
+        membership = GroupMember(user_id=user_id, group_id=group_id, is_leader=is_leader)
+        self.session.add(membership)
+        await self.session.commit()
+
+    async def get_group_events(self, group_id: str):
+        stmt = select(Event).where(Event.group_id == group_id)  # Предполагаем модель Event
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def create_event(self, group_id: str, name: str, date: str):
+        event = Event(group_id=group_id, name=name, date=date)
+        self.session.add(event)
+        await self.session.commit()
+
+# Добавьте модель Event в app/db/models.py
+class Event(Base):
+    __tablename__ = 'events'
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String(100), nullable=False)
+    date = Column(Date, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    group = relationship("Group", back_populates="events")
+
+Group.events = relationship("Event", back_populates="group", cascade="all, delete-orphan")
