@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 from app.db.models import User, Group, GroupMember, Event
 from uuid import UUID
 import logging
@@ -72,27 +73,106 @@ class GroupRepo:
             await self.session.commit()
             await self.session.refresh(new_group)
             return new_group
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании группы: {e}")
+            await self.session.rollback()
+            raise
         except Exception as e:
             logger.error(f"Ошибка при создании группы: {e}")
+            await self.session.rollback()
             raise
 
     async def get_group_by_id(self, group_id: str) -> Group | None:
+        """Возвращает группу по её ID."""
         stmt = select(Group).where(Group.id == group_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def add_member(self, group_id: str, user_id: int, is_leader: bool = False):
-        membership = GroupMember(user_id=user_id, group_id=group_id, is_leader=is_leader)
-        self.session.add(membership)
-        await self.session.commit()
+        """Добавляет пользователя в группу."""
+        try:
+            # Проверка существования группы
+            group = await self.get_group_by_id(group_id)
+            if not group:
+                raise ValueError(f"Группа с ID={group_id} не найдена")
 
-    async def get_group_events(self, group_id: str):
-        stmt = select(Event).where(Event.group_id == group_id)  # Предполагаем модель Event
+            # Проверка существования пользователя
+            user_stmt = select(User).where(User.telegram_id == user_id)
+            user_result = await self.session.execute(user_stmt)
+            if not user_result.scalar_one_or_none():
+                raise ValueError(f"Пользователь с telegram_id={user_id} не найден")
+
+            membership = GroupMember(user_id=user_id, group_id=group_id, is_leader=is_leader)
+            self.session.add(membership)
+            await self.session.commit()
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при добавлении участника: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении участника: {e}")
+            await self.session.rollback()
+            raise
+
+    async def get_group_members(self, group_id: str):
+        """Возвращает список участников группы."""
+        stmt = select(GroupMember).where(GroupMember.group_id == group_id)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def create_event(self, group_id: str, name: str, date: str):
-        event = Event(group_id=group_id, name=name, date=date)
-        self.session.add(event)
-        await self.session.commit()
+    async def get_group_events(self, group_id: str):
+        """Возвращает все события группы с сортировкой по дате."""
+        stmt = select(Event).where(Event.group_id == group_id).order_by(Event.date)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
+    async def create_event(
+        self,
+        group_id: str,
+        created_by_user_id: int,
+        title: str,
+        description: str = None,
+        subject: str = None,
+        date: str = None,
+        is_important: bool = False
+    ) -> Event:
+        """Создаёт новое событие с полным набором полей."""
+        try:
+            # Проверка существования группы
+            group = await self.get_group_by_id(group_id)
+            if not group:
+                raise ValueError(f"Группа с ID={group_id} не найдена")
+
+            # Проверка существования пользователя
+            user_stmt = select(User).where(User.telegram_id == created_by_user_id)
+            user_result = await self.session.execute(user_stmt)
+            if not user_result.scalar_one_or_none():
+                raise ValueError(f"Пользователь с telegram_id={created_by_user_id} не найден")
+
+            event = Event(
+                group_id=group_id,
+                created_by_user_id=created_by_user_id,
+                title=title,
+                description=description,
+                subject=subject,
+                date=date,
+                is_important=is_important
+            )
+            self.session.add(event)
+            await self.session.commit()
+            await self.session.refresh(event)
+            return event
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании события: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при создании события: {e}")
+            await self.session.rollback()
+            raise
+
+    async def get_event_by_id(self, event_id: str) -> Event | None:
+        """Возвращает событие по его ID."""
+        stmt = select(Event).where(Event.id == event_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

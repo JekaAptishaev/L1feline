@@ -150,3 +150,153 @@ async def process_event_date(message: Message, state: FSMContext, group_repo: Gr
         logger.error(f"Ошибка в process_event_date: {e}")
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
+@router.message(JoinGroup.waiting_for_invite_link)
+async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        invite_link = message.text.strip()
+        # Простая валидация ссылки (например, ожидается UUID или кастомный формат)
+        match = re.match(r'^https://t\.me/\+[a-zA-Z0-9-]+$', invite_link) or re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', invite_link)
+        if not match:
+            await message.answer("Неверный формат пригласительной ссылки. Попробуйте еще раз.")
+            return
+
+        # Предположим, что invite_link содержит group_id (например, UUID)
+        group_id = invite_link if match.group(0).startswith('{') else invite_link.split('+')[-1]  # Простая экстракция
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user:
+            user = await user_repo.get_or_create_user(
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name
+            )
+
+        # Логика присоединения (нужна проверка существования группы и прав)
+        group = await group_repo.get_group_by_id(group_id)
+        if not group:
+            await message.answer("Группа не найдена. Проверьте ссылку.")
+            return
+
+        await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
+        await state.clear()
+        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!")
+    except Exception as e:
+        logger.error(f"Ошибка в process_invite_link: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
+
+@router.message(F.text == "📅 События и Бронь")
+async def handle_events_and_booking(message: Message, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            await message.answer("У вас нет прав для управления событиями.")
+            return
+
+        group = user.group_membership.group
+        events = await group_repo.get_group_events(group.id)
+        if not events:
+            await message.answer("События отсутствуют. Создайте новое событие.")
+        else:
+            event_list = "\n".join([f"- {e.title} ({e.date}) {'[Важное]' if e.is_important else ''}" for e in events])
+            await message.answer(f"Список событий:\n{event_list}")
+    except Exception as e:
+        logger.error(f"Ошибка в handle_events_and_booking: {e}")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(F.text == "➕ Создать событие")
+async def start_create_event(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            await message.answer("У вас нет прав для создания событий.")
+            return
+
+        await state.set_state(CreateEvent.waiting_for_event_name)
+        await message.answer("Введите название события:")
+    except Exception as e:
+        logger.error(f"Ошибка в start_create_event: {e}")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(CreateEvent.waiting_for_event_name)
+async def process_event_name(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        event_name = message.text.strip()
+        if len(event_name) < 3 or len(event_name) > 100:
+            await message.answer("Название события должно быть от 3 до 100 символов.")
+            return
+
+        await state.update_data(event_name=event_name)
+        await state.set_state(CreateEvent.waiting_for_event_date)
+        await message.answer("Введите дату события (например, 2025-06-15):")
+    except Exception as e:
+        logger.error(f"Ошибка в process_event_name: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(CreateEvent.waiting_for_event_date)
+async def process_event_date(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        event_date = message.text.strip()
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', event_date):
+            await message.answer("Неверный формат даты. Используйте YYYY-MM-DD.")
+            return
+
+        await state.update_data(date=event_date)
+        await state.set_state(CreateEvent.waiting_for_description)
+        await message.answer("Введите описание события (или 'Пропустить'):")
+    except Exception as e:
+        logger.error(f"Ошибка в process_event_date: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(CreateEvent.waiting_for_description)
+async def process_event_description(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        description = message.text.strip() if message.text.strip().lower() != "пропустить" else None
+        await state.update_data(description=description)
+        await state.set_state(CreateEvent.waiting_for_subject)
+        await message.answer("Введите тему события (или 'Пропустить'):")
+    except Exception as e:
+        logger.error(f"Ошибка в process_event_description: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(CreateEvent.waiting_for_subject)
+async def process_event_subject(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        subject = message.text.strip() if message.text.strip().lower() != "пропустить" else None
+        await state.update_data(subject=subject)
+        await state.set_state(CreateEvent.waiting_for_importance)
+        await message.answer("Является ли событие важным? (Да/Нет)")
+    except Exception as e:
+        logger.error(f"Ошибка в process_event_subject: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(CreateEvent.waiting_for_importance)
+async def process_event_importance(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        is_important = message.text.strip().lower() in ["да", "yes"]
+        data = await state.get_data()
+        event_name = data.get("event_name")
+        event_date = data.get("date")
+        description = data.get("description")
+        subject = data.get("subject")
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if user and user.group_membership:
+            await group_repo.create_event(
+                group_id=user.group_membership.group.id,
+                created_by_user_id=user.telegram_id,  # Используем telegram_id как временное решение
+                title=event_name,
+                description=description,
+                subject=subject,
+                date=event_date,
+                is_important=is_important
+            )
+            await state.clear()
+            await message.answer(f"Событие «{event_name}» на {event_date} создано! {'[Важное]' if is_important else ''}")
+    except Exception as e:
+        logger.error(f"Ошибка в process_event_importance: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
