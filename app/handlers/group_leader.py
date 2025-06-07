@@ -18,6 +18,7 @@ class JoinGroup(StatesGroup):
 
 @router.message(CreateGroup.waiting_for_name)
 async def process_group_name(message: Message, state: FSMContext, group_repo: GroupRepo):
+    logger.info(f"Получено сообщение для CreateGroup.waiting_for_name: {message.text}")
     try:
         group_name = message.text.strip()
         if len(group_name) < 3:
@@ -38,7 +39,6 @@ async def process_group_name(message: Message, state: FSMContext, group_repo: Gr
         logger.error(f"Ошибка в process_group_name: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при создании группы. Попробуйте позже.")
-
 @router.message(JoinGroup.waiting_for_invite_link)
 async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:

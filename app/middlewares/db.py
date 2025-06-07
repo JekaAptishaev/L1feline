@@ -3,7 +3,7 @@ from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from app.db.repository import UserRepo  # Добавьте GroupRepo, если используете
+from app.db.repository import UserRepo, GroupRepo  # Добавьте GroupRepo, если используете
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class DbSessionMiddleware(BaseMiddleware):
                 data["session"] = session
                 data["user_repo"] = UserRepo(session)
                 # Если GroupRepo нужен, раскомментируйте:
-                # data["group_repo"] = GroupRepo(session)
+                data["group_repo"] = GroupRepo(session)
                 return await handler(event, data)
         except Exception as e:
             logger.error(f"Ошибка в DbSessionMiddleware: {e}")

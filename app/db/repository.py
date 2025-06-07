@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from app.db.models import User, Group, GroupMember
+from app.db.models import User, Group, GroupMember, Event
 from uuid import UUID
 import logging
 
@@ -96,15 +96,3 @@ class GroupRepo:
         self.session.add(event)
         await self.session.commit()
 
-# Добавьте модель Event в app/db/models.py
-class Event(Base):
-    __tablename__ = 'events'
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
-    group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
-    name = Column(String(100), nullable=False)
-    date = Column(Date, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    group = relationship("Group", back_populates="events")
-
-Group.events = relationship("Event", back_populates="group", cascade="all, delete-orphan")
