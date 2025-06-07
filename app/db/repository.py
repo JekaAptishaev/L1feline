@@ -83,7 +83,6 @@ class GroupRepo:
             raise
 
     async def get_group_by_id(self, group_id: str) -> Group | None:
-        """Возвращает группу по её ID."""
         stmt = select(Group).where(Group.id == group_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
