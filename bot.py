@@ -3,6 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from app.handlers.group_leader import router as group_leader_router
 from app.handlers import common
 from app.middlewares.db import DbSessionMiddleware
 from app.config import DATABASE_URL, BOT_TOKEN  # Импортируем напрямую из app.config
@@ -41,6 +42,7 @@ async def main() -> None:
 
     dp.update.middleware(DbSessionMiddleware(session_pool=session_maker))
     dp.include_router(common.router)
+    dp.include_router(group_leader_router)
 
     await bot.delete_webhook(drop_pending_updates=True)
     try:

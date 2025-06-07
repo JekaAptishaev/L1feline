@@ -51,12 +51,13 @@ async def start_create_group(message: Message, state: FSMContext, user_repo: Use
             await message.answer("Вы уже состоите в группе. Нельзя создать еще одну.")
             return
 
+        logger.info(f"Устанавливаем состояние CreateGroup.waiting_for_name для user_id={message.from_user.id}")
         await state.set_state(CreateGroup.waiting_for_name)
         await message.answer("Отлично! Введите название для вашей новой группы:")
     except Exception as e:
         logger.error(f"Ошибка в start_create_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
-
+        
 @router.message(F.text == "🔗 Присоединиться по ссылке")
 async def start_join_group(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
