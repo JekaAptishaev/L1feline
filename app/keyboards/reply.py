@@ -19,7 +19,8 @@ def get_main_menu_leader() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="👥 Участники группы")],
             [KeyboardButton(text="⚙️ Настройки группы")],
             [KeyboardButton(text="➕ Создать событие")],
-            [KeyboardButton(text="📅 Показать календарь")]
+            [KeyboardButton(text="📅 Показать календарь")],
+            [KeyboardButton(text="🔗 Создать приглашение")]
         ],
         resize_keyboard=True
     )
