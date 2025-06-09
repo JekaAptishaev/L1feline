@@ -1,7 +1,7 @@
-# app/db/models.py
-from sqlalchemy import BigInteger, String, Column, DateTime, func, Index, Boolean, UUID, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy import Column, String, DateTime, Index, ForeignKey, Boolean, Date, BigInteger, Integer  # Добавлен Date
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship, DeclarativeBase
 
 class Base(DeclarativeBase):
     """Базовый класс для всех моделей."""
@@ -41,6 +41,7 @@ class Group(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    invitations = relationship("Invite", back_populates="group")
 
 class GroupMember(Base):
     """Модель участника группы."""
@@ -60,3 +61,31 @@ class GroupMember(Base):
 
     user = relationship("User", back_populates="group_membership")
     group = relationship("Group", back_populates="members")
+
+# Добавьте модель Event в app/db/models.py
+class Event(Base):
+    __tablename__ = 'events'
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)  # Убедимся, что это поле есть
+    title = Column(String(100), nullable=False)
+    description = Column(String(255), nullable=True)
+    subject = Column(String(100), nullable=True)
+    date = Column(Date, nullable=False)
+    is_important = Column(Boolean, default=False)
+    created_by_user_id = Column(Integer, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)
+    group = relationship("Group", back_populates="events")
+
+Group.events = relationship("Event", back_populates="group", cascade="all, delete-orphan")
+
+class Invite(Base):
+    __tablename__ = 'groupinvitations'
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    invited_by_user_id = Column(Integer, ForeignKey('users.telegram_id'), nullable=False)
+    invite_token = Column(String(36), unique=True, nullable=False)  # Убедитесь, что длина 36
+    expires_at = Column(Date, nullable=False)
+    is_used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    group = relationship("Group", back_populates="invitations")
+    user = relationship("User", foreign_keys=[invited_by_user_id])
