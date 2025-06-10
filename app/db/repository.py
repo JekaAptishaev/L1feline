@@ -15,11 +15,17 @@ class UserRepo:
 
     async def get_or_create_user(self, telegram_id: int, username: str, first_name: str, last_name: str | None) -> User:
         try:
-            stmt = select(User).where(User.telegram_id == telegram_id)
+            logger.info(f"Попытка получить пользователя с telegram_id={telegram_id}")
+            stmt = (
+                select(User)
+                .options(selectinload(User.group_membership).selectinload(GroupMember.group))
+                .where(User.telegram_id == telegram_id)
+            )
             result = await self.session.execute(stmt)
             user = result.scalar_one_or_none()
 
             if not user:
+                logger.info(f"Пользователь не найден, создаём нового: telegram_id={telegram_id}")
                 user = User(
                     telegram_id=telegram_id,
                     telegram_username=username,
@@ -28,11 +34,21 @@ class UserRepo:
                 )
                 self.session.add(user)
                 await self.session.commit()
+                logger.info("Пользователь добавлен в сессию и коммит выполнен")
                 await self.session.refresh(user)
+                # Повторно загружаем пользователя с отношением
+                stmt = (
+                    select(User)
+                    .options(selectinload(User.group_membership).selectinload(GroupMember.group))
+                    .where(User.telegram_id == telegram_id)
+                )
+                result = await self.session.execute(stmt)
+                user = result.scalar_one_or_none()
+                logger.info("Пользователь обновлён с отношением")
             return user
         except Exception as e:
-            logger.error(f"Ошибка при получении/создании пользователя: {e}")
-            raise
+            logger.error(f"Ошибка при получении/создании пользователя: {e}", exc_info=True)
+        raise
 
     async def get_user_with_group_info(self, telegram_id: int) -> User | None:
         """Получает пользователя и информацию о его группе одним запросом."""
@@ -201,8 +217,9 @@ class GroupRepo:
             logger.error(f"Ошибка при создании приглашения: {e}")
             await self.session.rollback()
             raise
-
+    
     async def get_group_by_invite(self, invite_token: str) -> Group | None:
+        logger.info(f"Attempting to get group by invite token: {invite_token}")
         stmt = (
             select(Group)
             .join(Invite)
@@ -215,7 +232,11 @@ class GroupRepo:
         result = await self.session.execute(stmt)
         group = result.scalar_one_or_none()
         if group:
+            logger.info(f"Group found: {group.name}, ID: {group.id}")
             invite = (await self.session.execute(select(Invite).where(Invite.invite_token == invite_token))).scalar_one()
             invite.is_used = True
             await self.session.commit()
+            logger.info(f"Invite marked as used: {invite_token}")
+        else:
+            logger.info("No group found or invite is invalid/expired")
         return group

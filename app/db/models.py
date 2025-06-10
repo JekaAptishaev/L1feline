@@ -67,13 +67,12 @@ class Event(Base):
     __tablename__ = 'events'
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
     group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
-    created_by_user_id = Column(Integer, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)  # Убедимся, что это поле есть
+    created_by_user_id = Column(Integer, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)  # Только одно определение
     title = Column(String(100), nullable=False)
     description = Column(String(255), nullable=True)
     subject = Column(String(100), nullable=True)
     date = Column(Date, nullable=False)
     is_important = Column(Boolean, default=False)
-    created_by_user_id = Column(Integer, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)
     group = relationship("Group", back_populates="events")
 
 Group.events = relationship("Event", back_populates="group", cascade="all, delete-orphan")

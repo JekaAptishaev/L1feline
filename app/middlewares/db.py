@@ -8,26 +8,23 @@ from app.db.repository import UserRepo, GroupRepo  # Добавьте GroupRepo,
 logger = logging.getLogger(__name__)
 
 class DbSessionMiddleware(BaseMiddleware):
-    """Middleware для передачи асинхронной сессии SQLAlchemy в обработчики событий."""
-    
     def __init__(self, session_pool: async_sessionmaker):
         super().__init__()
         self.session_pool = session_pool
 
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: Dict[str, Any],
-    ) -> Any:
-        """Добавляет сессию базы данных и репозитории в data и вызывает обработчик."""
+    async def __call__(self, handler, event, data):
+        logger.info("Начало DbSessionMiddleware")
         try:
             async with self.session_pool() as session:
+                logger.info("Сессия создана")
                 data["session"] = session
                 data["user_repo"] = UserRepo(session)
-                # Если GroupRepo нужен, раскомментируйте:
                 data["group_repo"] = GroupRepo(session)
-                return await handler(event, data)
+                result = await handler(event, data)
+                logger.info("Обработчик успешно выполнен")
+                return result
         except Exception as e:
-            logger.error(f"Ошибка в DbSessionMiddleware: {e}")
+            logger.error(f"Ошибка в DbSessionMiddleware: {e}", exc_info=True)
             raise
+        finally:
+            logger.info("Сессия закрыта")

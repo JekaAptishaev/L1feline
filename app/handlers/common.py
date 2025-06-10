@@ -10,10 +10,11 @@ from app.handlers.group_leader import CreateGroup, JoinGroup
 router = Router()
 logger = logging.getLogger(__name__)
 
+
 @router.message(CommandStart())
-async def cmd_start(message: Message, user_repo: UserRepo):
+async def cmd_start(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
     try:
-        # Пытаемся получить пользователя
+        # Получаем пользователя
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         logger.info(f"User from get_user_with_group_info: {user}")
         if not user:
@@ -26,15 +27,13 @@ async def cmd_start(message: Message, user_repo: UserRepo):
                 )
                 logger.info(f"User created: {user}")
             except Exception as e:
-                logger.error(f"Ошибка при создании пользователя: {e}")
+                logger.error(f"Ошибка при создании пользователя: {e}", exc_info=True)
                 await message.answer("Не удалось создать пользователя. Попробуйте позже.")
                 return
 
         # Проверка на токен приглашения
-        invite_token = None
         if len(message.text.split()) > 1:
             invite_token = message.text.split()[1]
-            group_repo = GroupRepo(user_repo.session)  # Используем ту же сессию
             group = await group_repo.get_group_by_invite(invite_token)
             if group:
                 await group_repo.add_member(group.id, message.from_user.id, is_leader=False)
@@ -58,9 +57,9 @@ async def cmd_start(message: Message, user_repo: UserRepo):
                 reply_markup=get_main_menu_unregistered()
             )
     except Exception as e:
-        logger.error(f"Ошибка в cmd_start: {e}")
+        logger.error(f"Ошибка в cmd_start: {e}", exc_info=True)
         await message.answer("Произошла ошибка. Попробуйте позже.")
-
+        
 @router.message(F.text == "🚀 Создать группу")
 async def start_create_group(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
