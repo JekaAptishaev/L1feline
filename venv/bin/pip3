@@ -1,4 +1,4 @@
-#!/home/aptishaev/telegram-mini-app/venv/bin/python3
+#!/home/aptishaev/L1feline/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

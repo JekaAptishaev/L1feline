@@ -94,33 +94,33 @@ async def process_group_name(message: Message, state: FSMContext, group_repo: Gr
         await state.clear()
         await message.answer("Произошла ошибка при создании группы. Попробуйте позже.")
 
-@router.message(F.text == "🔗 Присоединиться по ключу")
+@router.message(F.text == "🔗 Присоединиться по ключу") 
 async def start_join_group(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if user.group_membership:
             await message.answer("Вы уже состоите в группе. Нельзя присоединиться к другой.")
             return
+        await state.set_state(JoinGroup.waiting_for_invite_link)
+        await message.answer("Введите ключ доступа для присоединения к группе (например, xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx):")
 
-        await state.set_state(JoinGroup.waiting_for_invite_token)
-        await message.answer("Введите пригласительную ссылку для присоединения к группе:")
     except Exception as e:
         logger.error(f"Ошибка в start_join_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(JoinGroup.waiting_for_invite_token)
-async def process_invite_token(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+@router.message(JoinGroup.waiting_for_invite_link)
+async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:
-        invite_token = message.text.strip()
-        match = re.match(r'^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$', invite_token)
+        access_key = message.text.strip()
+        match = re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', access_key)
         if not match:
-            await message.answer("Неверный формат пригласительногоо токена. Используйте ссылку вида xxxx.")
+            await message.answer("Неверный формат ключа доступа. Используйте ключ вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.")
             return
 
-        invite_token = match.group(1)
-        group = await group_repo.get_group_by_invite(invite_token)
+        group = await group_repo.get_group_by_invite(access_key)
         if not group:
-            await message.answer("Приглашение недействительно или истекло.")
+            await message.answer("Ключ доступа недействителен.")
+
             return
 
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -134,10 +134,9 @@ async def process_invite_token(message: Message, state: FSMContext, user_repo: U
 
         await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
         await state.clear()
-        await message.answer(
-            f"Вы успешно присоединились к группе «{group.name}»!",
-            reply_markup=get_regular_member_menu())
+        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!")
     except Exception as e:
-        logger.error(f"Ошибка в process_invite_token: {e}")
+        logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
+

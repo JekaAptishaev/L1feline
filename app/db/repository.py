@@ -3,7 +3,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from app.db.models import User, Group, GroupMember, Event, Invite
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import logging
 
@@ -197,46 +197,41 @@ class GroupRepo:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create_invite(self, group_id: str, invited_by_user_id: int, expiry_date: datetime.date) -> str:
+    async def create_invite(self, group_id: str, invited_by_user_id: int) -> str:
         try:
             invite_token = str(uuid.uuid4())
             invite = Invite(
                 group_id=group_id,
                 invited_by_user_id=invited_by_user_id,
                 invite_token=invite_token,
-                expires_at=expiry_date
+                expires_at=datetime(2100, 1, 1).date()  # Устанавливаем далёкую дату
             )
             self.session.add(invite)
             await self.session.commit()
             return invite_token
         except IntegrityError as e:
-            logger.error(f"Ошибка целостности при создании приглашения: {e}")
+            logger.error(f"Ошибка целостности при создании ключа доступа: {e}")
             await self.session.rollback()
             raise
         except Exception as e:
-            logger.error(f"Ошибка при создании приглашения: {e}")
+            logger.error(f"Ошибка при создании ключа доступа: {e}")
             await self.session.rollback()
             raise
-    
+
     async def get_group_by_invite(self, invite_token: str) -> Group | None:
-        logger.info(f"Attempting to get group by invite token: {invite_token}")
+        logger.info(f"Попытка получить группу по ключу доступа: {invite_token}")
         stmt = (
             select(Group)
             .join(Invite)
             .where(
                 Invite.invite_token == invite_token,
-                Invite.expires_at >= datetime.now().date(),
-                Invite.is_used == False
+                Invite.expires_at >= datetime.now().date()
             )
         )
         result = await self.session.execute(stmt)
         group = result.scalar_one_or_none()
         if group:
-            logger.info(f"Group found: {group.name}, ID: {group.id}")
-            invite = (await self.session.execute(select(Invite).where(Invite.invite_token == invite_token))).scalar_one()
-            invite.is_used = True
-            await self.session.commit()
-            logger.info(f"Invite marked as used: {invite_token}")
+            logger.info(f"Группа найдена: {group.name}, ID: {group.id}")
         else:
-            logger.info("No group found or invite is invalid/expired")
+            logger.info("Группа не найдена или ключ недействителен")
         return group
