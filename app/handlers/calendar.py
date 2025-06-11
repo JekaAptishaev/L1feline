@@ -33,11 +33,11 @@ def get_month_weeks_keyboard(month: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 def get_week_days_keyboard(days_with_events, week_num: int, month: int, year: int) -> InlineKeyboardMarkup:
-    """Генерирует клавиатуру с днями недели и кнопкой 'Назад к месяцам'."""
+    """Генерирует клавиатуру с днями недели и кнопкой 'Назад к неделям'."""
     inline_keyboard = [
         [InlineKeyboardButton(text=str(day), callback_data=f"day_{day}_{month}_{year}")] for day in days_with_events
     ]
-    inline_keyboard.append([InlineKeyboardButton(text="Назад к месяцам", callback_data=f"month_back_{year}_{month}")])
+    inline_keyboard.append([InlineKeyboardButton(text="Назад к неделям", callback_data=f"month_back_{year}_{month}")])
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 async def get_day_events_keyboard(events, day: int, month: int, year: int, week_num: int, week_events: list) -> InlineKeyboardMarkup:
@@ -103,7 +103,7 @@ async def get_day_events_keyboard(events, day: int, month: int, year: int, week_
 
     inline_keyboard.append(nav_buttons)
     inline_keyboard.append(
-        [InlineKeyboardButton(text="Назад к неделям", callback_data=f"week_back_{week_num}_{year}_{month}")]
+        [InlineKeyboardButton(text="Назад к выбору дня", callback_data=f"week_back_{week_num}_{year}_{month}")]
     )
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
@@ -111,12 +111,12 @@ def get_day_back_button(day: int, month: int, year: int, week_num: int) -> Inlin
     """Генерирует кнопки возврата к списку событий дня и неделям."""
     inline_keyboard = [
         [InlineKeyboardButton(text="Назад к дню", callback_data=f"day_back_{day}_{month}_{year}")],
-        [InlineKeyboardButton(text="Назад к неделям", callback_data=f"week_back_{week_num}_{year}_{month}")]
+        [InlineKeyboardButton(text="Назад к выбору дня", callback_data=f"week_back_{week_num}_{year}_{month}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 def get_cancel_button(year: int, month: int) -> InlineKeyboardMarkup:
-    """Генерирует кнопку отмены для возврата к месяцам."""
+    """Генерирует кнопку отмены для возврата к неделям."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Отмена", callback_data=f"month_back_{year}_{month}")]
     ])
