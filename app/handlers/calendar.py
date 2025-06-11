@@ -40,19 +40,71 @@ def get_week_days_keyboard(days_with_events, week_num: int, month: int, year: in
     inline_keyboard.append([InlineKeyboardButton(text="Назад к месяцам", callback_data=f"month_back_{year}_{month}")])
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
-def get_day_events_keyboard(events, day: int, month: int, year: int, week_num: int) -> InlineKeyboardMarkup:
+async def get_day_events_keyboard(events, day: int, month: int, year: int, week_num: int, week_events: list) -> InlineKeyboardMarkup:
     """Генерирует клавиатуру с кнопками для событий дня и навигацией."""
     inline_keyboard = [
         [InlineKeyboardButton(text=f"{event.title} {'[Важное]' if event.is_important else ''}", callback_data=f"event_{event.id}")]
         for event in events
     ]
-    prev_day = datetime(year, month, day) - timedelta(days=1)
-    next_day = datetime(year, month, day) + timedelta(days=1)
-    inline_keyboard.append([
-        InlineKeyboardButton(text="Предыдущий день", callback_data=f"day_{prev_day.day}_{prev_day.month}_{prev_day.year}"),
-        InlineKeyboardButton(text="Следующий день", callback_data=f"day_{next_day.day}_{next_day.month}_{next_day.year}")
-    ])
-    inline_keyboard.append([InlineKeyboardButton(text="Назад к неделям", callback_data=f"week_back_{week_num}_{year}_{month}")])
+
+    # Вычисляем границы текущей недели
+    start_week_day = (week_num - 1) * 7 + 1
+    last_day_of_month = (datetime(year, month + 1, 1) - timedelta(days=1)).day if month < 12 else 31
+    end_week_day = min(start_week_day + 6, last_day_of_month)
+
+    # Находим дни с событиями в текущей неделе
+    event_days = sorted(set(event.date.day for event in week_events if event.date.month == month and event.date.year == year))
+
+    # Находим ближайший предыдущий и следующий день с событиями
+    current_date = datetime(year, month, day).date()
+    prev_event_day = None
+    next_event_day = None
+
+    for event_day in event_days:
+        event_date = datetime(year, month, event_day).date()
+        if event_date < current_date and event_day >= start_week_day:
+            prev_event_day = event_day
+        if event_date > current_date and event_day <= end_week_day and (next_event_day is None or event_day < next_event_day):
+            next_event_day = event_day
+
+    # Создаем кнопки навигации
+    nav_buttons = []
+    if prev_event_day:
+        prev_date = datetime(year, month, prev_event_day)
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="Предыдущий день",
+                callback_data=f"day_{prev_date.day}_{prev_date.month}_{prev_date.year}"
+            )
+        )
+    else:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="⏹ Раньше нет событий",
+                callback_data="no_events_earlier"
+            )
+        )
+
+    if next_event_day:
+        next_date = datetime(year, month, next_event_day)
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="Следующий день",
+                callback_data=f"day_{next_date.day}_{next_date.month}_{next_date.year}"
+            )
+        )
+    else:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="⏹ Дальше нет событий",
+                callback_data="no_events_later"
+            )
+        )
+
+    inline_keyboard.append(nav_buttons)
+    inline_keyboard.append(
+        [InlineKeyboardButton(text="Назад к неделям", callback_data=f"week_back_{week_num}_{year}_{month}")]
+    )
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 def get_day_back_button(day: int, month: int, year: int, week_num: int) -> InlineKeyboardMarkup:
@@ -153,7 +205,15 @@ async def handle_day_selection(callback: CallbackQuery, user_repo: UserRepo, gro
             await callback.answer()
             return
 
-        keyboard = get_day_events_keyboard(day_events, day, month, year, week_num)
+        # Фильтруем события текущей недели
+        start_day = (week_num - 1) * 7 + 1
+        end_day = min(start_day + 6, (datetime(year, month + 1, 1) - timedelta(days=1)).day if month < 12 else 31)
+        week_events = [
+            event for event in events
+            if start_day <= event.date.day <= end_day and event.date.month == month and event.date.year == year
+        ]
+
+        keyboard = await get_day_events_keyboard(day_events, day, month, year, week_num, week_events)
         await callback.message.edit_text(
             f"События на {event_date.strftime('%Y-%m-%d')}:",
             reply_markup=keyboard
@@ -216,7 +276,15 @@ async def handle_day_back(callback: CallbackQuery, user_repo: UserRepo, group_re
             await callback.answer()
             return
 
-        keyboard = get_day_events_keyboard(day_events, day, month, year, week_num)
+        # Фильтруем события текущей недели
+        start_day = (week_num - 1) * 7 + 1
+        end_day = min(start_day + 6, (datetime(year, month + 1, 1) - timedelta(days=1)).day if month < 12 else 31)
+        week_events = [
+            event for event in events
+            if start_day <= event.date.day <= end_day and event.date.month == month and event.date.year == year
+        ]
+
+        keyboard = await get_day_events_keyboard(day_events, day, month, year, week_num, week_events)
         await callback.message.edit_text(
             f"События на {event_date.strftime('%Y-%m-%d')}:",
             reply_markup=keyboard
@@ -226,6 +294,15 @@ async def handle_day_back(callback: CallbackQuery, user_repo: UserRepo, group_re
         logger.error(f"Ошибка в handle_day_back: {e}")
         await callback.answer("Произошла ошибка.", show_alert=True)
 
+@router.callback_query(F.data == "no_events_earlier")
+async def handle_no_events_earlier(callback: CallbackQuery):
+    """Обработчик для кнопки, когда нет событий раньше."""
+    await callback.answer("На этой неделе нет событий, запланированных на более ранние дни.", show_alert=True)
+
+@router.callback_query(F.data == "no_events_later")
+async def handle_no_events_later(callback: CallbackQuery):
+    """Обработчик для кнопки, когда нет событий позже."""
+    await callback.answer("Далее на этой неделе нет дней с событиями.", show_alert=True)
 
 @router.callback_query(F.data.startswith("week_back_"))
 async def handle_week_back(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
