@@ -15,9 +15,8 @@ def get_main_menu_leader() -> ReplyKeyboardMarkup:
     """Возвращает клавиатуру для старосты группы."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📅 События и Бронь")],
-            [KeyboardButton(text="👥 Участники группы")],
-            [KeyboardButton(text="⚙️ Настройки группы")],
+            [KeyboardButton(text="📅 События")],
+            [KeyboardButton(text="👥 Участники группы*")],
             [KeyboardButton(text="➕ Создать событие")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")],
@@ -30,6 +29,9 @@ def get_assistant_menu() -> ReplyKeyboardMarkup:
     """Возвращает клавиатуру для ассистента группы."""
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="📅 События")],
+            [KeyboardButton(text="👥 Участники группы")],
+            [KeyboardButton(text="➕ Создать событие")],
             [KeyboardButton(text="📅 Управление событиями")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")]
@@ -41,6 +43,7 @@ def get_regular_member_menu() -> ReplyKeyboardMarkup:
     """Возвращает клавиатуру для обычных участников группы."""
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="📅 События")],
             [KeyboardButton(text="👥 Участники группы")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")]

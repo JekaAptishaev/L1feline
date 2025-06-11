@@ -4,13 +4,18 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from app.db.repository import UserRepo, GroupRepo
 from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader,  get_regular_member_menu, get_assistant_menu 
-from app.handlers.group_leader import CreateGroup, JoinGroup
 
 router = Router()
 logger = logging.getLogger(__name__)
 
+class CreateGroup(StatesGroup):
+    waiting_for_name = State()
+
+class JoinGroup(StatesGroup):
+    waiting_for_invite_token = State()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
@@ -64,6 +69,30 @@ async def start_create_group(message: Message, state: FSMContext, user_repo: Use
     except Exception as e:
         logger.error(f"Ошибка в start_create_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
+        
+@router.message(CreateGroup.waiting_for_name)
+async def process_group_name(message: Message, state: FSMContext, group_repo: GroupRepo):
+    logger.info(f"Получено сообщение для CreateGroup.waiting_for_name: {message.text}")
+    try:
+        group_name = message.text.strip()
+        if len(group_name) < 3:
+            await message.answer("Название слишком короткое. Пожалуйста, введите название от 3 символов.")
+            return
+        if len(group_name) > 255:
+            await message.answer("Название слишком длинное. Пожалуйста, введите название до 255 символов.")
+            return
+
+        await group_repo.create_group(name=group_name, creator_id=message.from_user.id)
+
+        await state.clear()
+        await message.answer(
+            f"🎉 Группа «{group_name}» успешно создана! Вы теперь её староста.",
+            reply_markup=get_main_menu_leader()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в process_group_name: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка при создании группы. Попробуйте позже.")
 
 @router.message(F.text == "🔗 Присоединиться по ключу") 
 async def start_join_group(message: Message, state: FSMContext, user_repo: UserRepo):
@@ -72,9 +101,9 @@ async def start_join_group(message: Message, state: FSMContext, user_repo: UserR
         if user.group_membership:
             await message.answer("Вы уже состоите в группе. Нельзя присоединиться к другой.")
             return
-
         await state.set_state(JoinGroup.waiting_for_invite_link)
         await message.answer("Введите ключ доступа для присоединения к группе (например, xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx):")
+
     except Exception as e:
         logger.error(f"Ошибка в start_join_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
@@ -91,6 +120,7 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
         group = await group_repo.get_group_by_invite(access_key)
         if not group:
             await message.answer("Ключ доступа недействителен.")
+
             return
 
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -109,3 +139,4 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
         logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
+

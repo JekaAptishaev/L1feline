@@ -1,5 +1,4 @@
 import logging
-import re
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.state import StatesGroup, State
@@ -13,81 +12,10 @@ import uuid
 router = Router()
 logger = logging.getLogger(__name__)
 
-class CreateGroup(StatesGroup):
-    waiting_for_name = State()
-
-class JoinGroup(StatesGroup):
-    waiting_for_invite_link = State()
-
 class CreateInvite(StatesGroup):
     waiting_for_invite_duration = State()
 
-class CreateEvent(StatesGroup):
-    waiting_for_event_name = State()
-    waiting_for_event_date = State()
-    waiting_for_description = State()
-    waiting_for_subject = State()
-    waiting_for_importance = State()
-
-@router.message(CreateGroup.waiting_for_name)
-async def process_group_name(message: Message, state: FSMContext, group_repo: GroupRepo):
-    logger.info(f"Получено сообщение для CreateGroup.waiting_for_name: {message.text}")
-    try:
-        group_name = message.text.strip()
-        if len(group_name) < 3:
-            await message.answer("Название слишком короткое. Пожалуйста, введите название от 3 символов.")
-            return
-        if len(group_name) > 255:
-            await message.answer("Название слишком длинное. Пожалуйста, введите название до 255 символов.")
-            return
-
-        await group_repo.create_group(name=group_name, creator_id=message.from_user.id)
-
-        await state.clear()
-        await message.answer(
-            f"🎉 Группа «{group_name}» успешно создана! Вы теперь её староста.",
-            reply_markup=get_main_menu_leader()
-        )
-    except Exception as e:
-        logger.error(f"Ошибка в process_group_name: {e}")
-        await state.clear()
-        await message.answer("Произошла ошибка при создании группы. Попробуйте позже.")
-
-@router.message(JoinGroup.waiting_for_invite_link)
-async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
-    try:
-        invite_link = message.text.strip()
-        match = re.match(r'^https://t\.me/L1felinebot\?start=([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$', invite_link)
-        if not match:
-            await message.answer("Неверный формат пригласительной ссылки. Используйте ссылку вида https://t.me/L1felinebot?start=xxxx.")
-            return
-
-        invite_token = match.group(1)
-        group = await group_repo.get_group_by_invite(invite_token)
-        if not group:
-            await message.answer("Приглашение недействительно или истекло.")
-            return
-
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if not user:
-            user = await user_repo.get_or_create_user(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name
-            )
-
-        await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
-        await state.clear()
-        await message.answer(
-            f"Вы успешно присоединились к группе «{group.name}»!",
-            reply_markup=get_regular_member_menu())
-    except Exception as e:
-        logger.error(f"Ошибка в process_invite_link: {e}")
-        await state.clear()
-        await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
-
-@router.message(F.text == "👥 Участники группы")
+@router.message(F.text == "👥 Участники группы*")
 async def handle_group_members(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -115,55 +43,6 @@ async def handle_group_members(message: Message, user_repo: UserRepo, group_repo
         logger.error(f"Ошибка в handle_group_members: {e}", exc_info=True)
         await message.answer("Произошла ошибка при получении списка участников. Попробуйте позже.")
 
-@router.message(F.text == "📅 События и Бронь")
-async def handle_events_and_booking(message: Message, group_repo: GroupRepo, user_repo: UserRepo):
-    try:
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if not user or not user.group_membership or not user.group_membership.is_leader:
-            await message.answer("У вас нет прав для управления событиями.")
-            return
-
-        group = user.group_membership.group
-        events = await group_repo.get_group_events(group.id)
-        if not events:
-            await message.answer("События отсутствуют. Создайте новое событие.")
-        else:
-            event_list = "\n".join([f"- {e.title} ({e.date}) {'[Важное]' if e.is_important else ''}" for e in events])
-            await message.answer(f"Список событий:\n{event_list}")
-    except Exception as e:
-        logger.error(f"Ошибка в handle_events_and_booking: {e}")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
-
-@router.message(F.text == "➕ Создать событие")
-async def start_create_event(message: Message, state: FSMContext, user_repo: UserRepo):
-    try:
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        logger.info(f"User check for event creation: {user}, membership: {user.group_membership if user else None}")
-        if not user or not user.group_membership or not user.group_membership.is_leader:
-            await message.answer("У вас нет прав для создания событий.")
-            return
-
-        await state.set_state(CreateEvent.waiting_for_event_name)
-        # Создаем инлайн-клавиатуру с кнопкой "Отмена"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Отмена", callback_data="cancel_event_creation")
-        await message.answer("Введите название события:", reply_markup=keyboard.as_markup())
-    except Exception as e:
-        logger.error(f"Ошибка в start_create_event: {e}")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
-
-@router.callback_query(F.data == "cancel_event_creation")
-async def cancel_event_creation(callback: CallbackQuery, state: FSMContext):
-    try:
-        await state.clear()
-        await callback.message.delete()
-        await callback.message.answer("Создание события отменено.")
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Ошибка в cancel_event_creation: {e}")
-        await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
-        await callback.answer()
-
 @router.message(F.text == "🔗 Создать приглашение")
 async def start_create_invite(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:
@@ -173,6 +52,7 @@ async def start_create_invite(message: Message, state: FSMContext, user_repo: Us
             return
 
         group = user.group_membership.group
+        
         invite_token = await group_repo.create_invite(group.id, user.telegram_id)
         await state.clear()
         await message.answer(
@@ -316,3 +196,4 @@ async def process_event_importance(callback: CallbackQuery, state: FSMContext, g
         await state.clear()
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
+        await message.answer("Произошла ошибка при создании приглашения. Попробуйте позже.")
