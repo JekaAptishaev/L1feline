@@ -35,7 +35,7 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         logger.info(f"User check for event creation: {user}, membership: {user.group_membership if user else None}")
-        if not user or not user.group_membership or not user.group_membership.is_leader:
+        if not user or not user.group_membership or not (user.group_membership.is_leader or user.group_membership.is_assistant):
             await message.answer("У вас нет прав для создания событий.")
             return
 
