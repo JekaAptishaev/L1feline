@@ -1,4 +1,5 @@
 import logging
+from aiogram.fsm.context import FSMContext
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -40,11 +41,11 @@ async def show_member_info(message: Message, user_repo: UserRepo):
 
 @router.message(Command("calendar"))
 @router.message(F.text == "📅 Показать календарь")
-async def show_calendar_member(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
+async def show_calendar_member(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     """Перенаправление на месячный календарь для обычных участников."""
     try:
         from app.handlers import calendar
-        await calendar.show_calendar(message, user_repo, group_repo)
+        await calendar.show_calendar(message, user_repo, group_repo, state)  # Добавлен state
     except Exception as e:
         logger.error(f"Ошибка в show_calendar_member: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
