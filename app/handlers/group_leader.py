@@ -85,8 +85,8 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
         await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
         
 @router.message(F.text == "👥 Участники группы")
-async def handle_group_members(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
-    """Обработчик для отображения списка участников группы."""
+async def handle_group_members_leader(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
+    """Обработчик для старосты: отображение списка участников группы с ролями."""
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if not user or not user.group_membership or not user.group_membership.is_leader:

@@ -39,11 +39,11 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.update.middleware(DbSessionMiddleware(session_pool=session_maker))
+    dp.include_router(regular_member.router)
     dp.include_router(common.router)
     dp.include_router(group_leader.router)
     dp.include_router(admin.router)
     dp.include_router(calendar.router)
-    dp.include_router(regular_member.router)
     dp.include_router(group_assistant.router)
 
     await bot.delete_webhook(drop_pending_updates=True)
