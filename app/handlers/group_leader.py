@@ -6,7 +6,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import GroupRepo, UserRepo
-from app.keyboards.reply import get_main_menu_leader
+from app.keyboards.reply import get_main_menu_leader, get_regular_member_menu
 from datetime import datetime, timedelta
 import uuid
 
@@ -79,7 +79,9 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
 
         await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
         await state.clear()
-        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!")
+        await message.answer(
+            f"Вы успешно присоединились к группе «{group.name}»!",
+            reply_markup=get_regular_member_menu())
     except Exception as e:
         logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()

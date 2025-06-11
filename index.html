@@ -1,54 +1,111 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Mini App</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Lifeline</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            padding: 20px;
-            text-align: center;
+            background-color: #1a1a1a;
+            color: #fff;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
-        button {
-            padding: 10px 15px;
-            background: #0088cc;
-            color: white;
+        .container {
+            background-color: #333;
+            border-radius: 10px;
+            padding: 20px;
+            width: 300px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header h2 {
+            margin: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
             border: none;
             border-radius: 5px;
+            background-color: #666;
+            color: #fff;
+        }
+        .form-group input:focus {
+            outline: none;
+            background-color: #555;
+        }
+        .btn {
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            width: 100%;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .id {
+            color: #ccc;
+            font-size: 0.9em;
+            margin-bottom: 15px;
+        }
+        .nav {
+            display: flex;
+            justify-content: space-around;
+            background-color: #2c3e50;
+            padding: 10px;
+            border-radius: 5px;
+            position: fixed;
+            bottom: 20px;
+            width: 300px;
+        }
+        .nav button {
+            background: none;
+            border: none;
+            color: #fff;
             cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <h1>Привет, <span id="user-name">Друг</span>! 👋</h1>
-    <p>Это тестовый Mini App, запущенный локально.</p>
-    <button onclick="sendData()">Отправить данные боту</button>
-
-    <script>
-        // Инициализация Telegram WebApp
-        const tg = window.Telegram.WebApp;
-
-        // Показываем кнопку "Закрыть"
-        tg.MainButton
-            .setText("Закрыть")
-            .onClick(() => tg.close())
-            .show();
-
-        // Выводим имя пользователя (если есть)
-        if (tg.initDataUnsafe.user) {
-            document.getElementById("user-name").textContent = 
-                tg.initDataUnsafe.user.first_name;
-        }
-
-        // Отправка данных боту
-        function sendData() {
-            tg.sendData(JSON.stringify({
-                action: "test",
-                time: new Date().toLocaleTimeString()
-            }));
-        }
-    </script>
+    <div class="container">
+        <div class="header">
+            <h2>Lifeline</h2>
+            <span>▼</span>
+        </div>
+        <div class="form-group">
+            <label>Авторизация</label>
+            <input type="text" placeholder="ФИО">
+            <input type="text" placeholder="Вступить в группу">
+            <input type="text" placeholder="ИИИ">
+            <button class="btn">Создать группу</button>
+            <div class="id">id: @fe02923ru8</div>
+            <button class="btn">Принять</button>
+        </div>
+    </div>
+    <div class="nav">
+        <button><span>☰</span></button>
+        <button><span>📅</span></button>
+        <button><span>👥</span></button>
+    </div>
 </body>
 </html>
