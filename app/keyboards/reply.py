@@ -41,6 +41,7 @@ def get_regular_member_menu() -> ReplyKeyboardMarkup:
     """Возвращает клавиатуру для обычных участников группы."""
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="👥 Участники группы")],
             [KeyboardButton(text="ℹ️ Информация о группе")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")]
