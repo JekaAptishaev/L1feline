@@ -1,22 +1,13 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
 
-def get_main_menu_unregistered() -> ReplyKeyboardMarkup:
-    """Возвращает клавиатуру для незарегистрированных пользователей."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🚀 Создать группу")],
-            [KeyboardButton(text="🔗 Присоединиться по ссылке")]
-        ],
-        resize_keyboard=True
-    )
-
 def get_main_menu_leader() -> ReplyKeyboardMarkup:
-    """Возвращает клавиатуру для старосты группы."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📅 События и Бронь")],
             [KeyboardButton(text="👥 Участники группы")],
+            [KeyboardButton(text="📋 Создать список тем")],
+            [KeyboardButton(text="📋 Просмотреть темы")],
             [KeyboardButton(text="⚙️ Настройки группы")],
             [KeyboardButton(text="➕ Создать событие")],
             [KeyboardButton(text="📅 Показать календарь")],
@@ -25,12 +16,23 @@ def get_main_menu_leader() -> ReplyKeyboardMarkup:
         resize_keyboard=True
     )
 
-def get_assistant_menu() -> ReplyKeyboardMarkup:
-    """Возвращает клавиатуру для ассистента группы."""
+def get_main_menu_member() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📅 Управление событиями")],
-            [KeyboardButton(text="📅 Показать календарь")]
+            [KeyboardButton(text="📅 События группы")],
+            [KeyboardButton(text="👥 Участники группы")],
+            [KeyboardButton(text="📋 Бронировать тему")],
+            [KeyboardButton(text="📋 Просмотреть темы")],
+            [KeyboardButton(text="🔗 Присоединиться по приглашению")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_main_menu_unregistered() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Создать группу")],
+            [KeyboardButton(text="🔗 Присоединиться по приглашению")]
         ],
         resize_keyboard=True
     )

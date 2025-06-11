@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from app.db.repository import GroupRepo, UserRepo
 from app.keyboards.reply import get_main_menu_leader
 from datetime import datetime, timedelta
-import uuid  # Для генерации уникальных идентификаторов
+import uuid 
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -27,6 +27,36 @@ class CreateEvent(StatesGroup):
     waiting_for_description = State()
     waiting_for_subject = State()
     waiting_for_importance = State()
+
+@router.message(F.text == "👥 Участники группы")
+async def handle_group_members(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
+    """Обработчик для отображения списка участников группы."""
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            await message.answer("У вас нет прав для просмотра участников группы.")
+            return
+
+        group = user.group_membership.group
+        members = await group_repo.get_group_members(group.id)
+        if not members:
+            await message.answer("В группе пока нет участников.")
+            return
+
+        # Формируем список участников
+        member_list = []
+        for member in members:
+            member_user = await user_repo.get_user_with_group_info(member.user_id)
+            if member_user:
+                role = "Староста" if member.is_leader else "Ассистент" if member.is_assistant else "Участник"
+                member_info = f"{member_user.first_name} {member_user.last_name or ''} (@{member_user.telegram_username or 'без имени'}) - {role}"
+                member_list.append(member_info)
+
+        response = f"Участники группы «{group.name}»:\n" + "\n".join(member_list)
+        await message.answer(response)
+    except Exception as e:
+        logger.error(f"Ошибка в handle_group_members: {e}", exc_info=True)
+        await message.answer("Произошла ошибка при получении списка участников. Попробуйте позже.")
 
 @router.message(CreateGroup.waiting_for_name)
 async def process_group_name(message: Message, state: FSMContext, group_repo: GroupRepo):

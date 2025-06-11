@@ -62,6 +62,7 @@ async def cmd_start(message: Message, user_repo: UserRepo, group_repo: GroupRepo
         
 @router.message(F.text == "🚀 Создать группу")
 async def start_create_group(message: Message, state: FSMContext, user_repo: UserRepo):
+    logger.info(f"Получено сообщение: {message.text}' для user_id={message.from_user.id}")
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if user.group_membership:
