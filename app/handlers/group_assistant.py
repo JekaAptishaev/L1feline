@@ -1,5 +1,4 @@
 import logging
-import re
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
@@ -8,7 +7,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import UserRepo, GroupRepo
 from datetime import datetime
-from app.keyboards.reply import get_calendar_keyboard  # Предполагаем, что эта функция доступна
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -35,7 +33,7 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         logger.info(f"User check for event creation: {user}, membership: {user.group_membership if user else None}")
-        if not user or not user.group_membership or not user.group_membership.is_leader:
+        if not user or not user.group_membership or not (user.group_membership.is_leader or user.group_membership.is_assistant):
             await message.answer("У вас нет прав для создания событий.")
             return
 
@@ -59,7 +57,6 @@ async def cancel_event_creation(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка в cancel_event_creation: {e}")
         await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
         await callback.answer()
-
 
 @router.message(CreateEvent.waiting_for_event_name)
 async def process_event_name(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):

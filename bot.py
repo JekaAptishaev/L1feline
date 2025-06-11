@@ -3,7 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from app.handlers import common, admin, calendar, group_assistant, group_leader, regular_member, weekly_calendar
+from app.handlers import common, admin, calendar, group_assistant, group_leader, group_member, weekly_calendar
 from app.middlewares.db import DbSessionMiddleware
 from app.config import DATABASE_URL, BOT_TOKEN
 
@@ -39,7 +39,7 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.update.middleware(DbSessionMiddleware(session_pool=session_maker))
-    dp.include_router(regular_member.router)
+    dp.include_router(group_member.router)
     dp.include_router(common.router)
     dp.include_router(group_leader.router)
     dp.include_router(admin.router)

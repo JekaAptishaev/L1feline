@@ -9,22 +9,6 @@ from app.keyboards.reply import get_regular_member_menu
 router = Router()
 logger = logging.getLogger(__name__)
 
-@router.message(Command("start_menu"))
-async def show_menu(message: Message, user_repo: UserRepo):
-    """Обработчик команды /start_menu для отображения меню обычного участника."""
-    try:
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if user and user.group_membership:
-            await message.answer(
-                f"Вы участник группы «{user.group_membership.group.name}». Выберите действие:",
-                reply_markup=get_regular_member_menu()
-            )
-        else:
-            await message.answer("Вы не состоите в группе.")
-    except Exception as e:
-        logger.error(f"Ошибка в show_menu: {e}")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
-
 '''
 @router.message(Command("member_info"))
 @router.message(F.text == "ℹ️ Информация о группе")
@@ -40,6 +24,25 @@ async def show_member_info(message: Message, user_repo: UserRepo):
         logger.error(f"Ошибка в show_member_info: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 '''
+
+@router.message(F.text == "📅 События")
+async def handle_events_and_booking(message: Message, group_repo: GroupRepo, user_repo: UserRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user or not user.group_membership:
+            await message.answer("У вас нет прав для управления событиями.")
+            return
+
+        group = user.group_membership.group
+        events = await group_repo.get_group_events(group.id)
+        if not events:
+            await message.answer("События отсутствуют. Создайте новое событие.")
+        else:
+            event_list = "\n".join([f"- {e.title} ({e.date}) {'[Важное]' if e.is_important else ''}" for e in events])
+            await message.answer(f"Список событий:\n{event_list}")
+    except Exception as e:
+        logger.error(f"Ошибка в handle_events_and_booking: {e}")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.message(Command("calendar"))
 @router.message(F.text == "📅 Показать календарь")
@@ -92,22 +95,3 @@ async def handle_group_members_leader(message: Message, user_repo: UserRepo, gro
     except Exception as e:
         logger.error(f"Ошибка в handle_group_members: {e}", exc_info=True)
         await message.answer("Произошла ошибка при получении списка участников. Попробуйте позже.")
-
-@router.message(F.text == "📅 События")
-async def handle_events_and_booking(message: Message, group_repo: GroupRepo, user_repo: UserRepo):
-    try:
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if not user or not user.group_membership:
-            await message.answer("У вас нет прав для управления событиями.")
-            return
-
-        group = user.group_membership.group
-        events = await group_repo.get_group_events(group.id)
-        if not events:
-            await message.answer("События отсутствуют. Создайте новое событие.")
-        else:
-            event_list = "\n".join([f"- {e.title} ({e.date}) {'[Важное]' if e.is_important else ''}" for e in events])
-            await message.answer(f"Список событий:\n{event_list}")
-    except Exception as e:
-        logger.error(f"Ошибка в handle_events_and_booking: {e}")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
