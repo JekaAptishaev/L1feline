@@ -24,9 +24,9 @@ async def show_menu(message: Message, user_repo: UserRepo):
         logger.error(f"Ошибка в show_menu: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(Command("member_info"))
+@router.message([Command("member_info"), F.text == "ℹ️ Информация о группе"])
 async def show_member_info(message: Message, user_repo: UserRepo):
-    """Обработчик команды /member_info для отображения информации о группе."""
+    """Обработчик для отображения информации о группе."""
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if user and user.group_membership:
@@ -37,7 +37,7 @@ async def show_member_info(message: Message, user_repo: UserRepo):
         logger.error(f"Ошибка в show_member_info: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(Command("calendar") | F.text == "📅 Показать календарь")
+@router.message([Command("calendar"), F.text == "📅 Показать календарь"])
 async def show_calendar_member(message: Message, user_repo: UserRepo):
     """Перенаправление на месячный календарь для обычных участников."""
     try:
@@ -47,7 +47,7 @@ async def show_calendar_member(message: Message, user_repo: UserRepo):
         logger.error(f"Ошибка в show_calendar_member: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(Command("weekly_calendar") | F.text == "📅 Показать недельный календарь")
+@router.message([Command("weekly_calendar"), F.text == "📅 Показать недельный календарь"])
 async def show_weekly_calendar_member(message: Message, user_repo: UserRepo):
     """Перенаправление на недельный календарь для обычных участников."""
     try:

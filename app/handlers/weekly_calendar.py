@@ -10,8 +10,9 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 @router.message(Command("weekly_calendar"))
+@router.message(F.text == "📅 Показать недельный календарь")
 async def show_weekly_calendar(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
-    """Обработчик команды /weekly_calendar для отображения календаря по неделям."""
+    """Обработчик команды /weekly_calendar и кнопки для отображения календаря по неделям."""
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if not user or not user.group_membership:
