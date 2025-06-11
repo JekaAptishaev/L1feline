@@ -111,8 +111,12 @@ async def handle_week_selection(callback: CallbackQuery, user_repo: UserRepo, gr
             if start_day <= event.date.day <= end_day and event.date.month == month and event.date.year == year
         ]
 
+        keyboard = get_week_days_keyboard([], week_num, month, year)  # Пустой список дней для кнопки "Назад"
         if not week_events:
-            await callback.message.edit_text("Нет событий на этой неделе.")
+            await callback.message.edit_text(
+                "Нет событий на этой неделе. Вернитесь к выбору месяца.",
+                reply_markup=keyboard
+            )
             await callback.answer()
             return
 
@@ -225,15 +229,15 @@ async def handle_day_back(callback: CallbackQuery, user_repo: UserRepo, group_re
 
 @router.callback_query(F.data.startswith("week_back_"))
 async def handle_week_back(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
+    """Обработчик возврата к списку дней недели."""
     try:
         logger.info(f"handle_week_back called with callback.data: {callback.data}")
-        # Извлекаем последние 3 компонента (неделя, год, месяц)
+        # Разбиваем данные и извлекаем нужные значения
         parts = callback.data.split('_')
-        week_num = int(parts[-3])  # третья с конца
-        year = int(parts[-2])  # вторая с конца
-        month = int(parts[-1])  # последняя часть
+        week_num = int(parts[2])  # Третья часть (индекс 2)
+        year = int(parts[3])  # Четвертая часть (индекс 3)
+        month = int(parts[4])  # Пятая часть (индекс 4)
 
-        # Остальной код без изменений
         start_day = (week_num - 1) * 7 + 1
         end_day = start_day + 6
         if week_num == 4:
@@ -252,8 +256,12 @@ async def handle_week_back(callback: CallbackQuery, user_repo: UserRepo, group_r
             if start_day <= event.date.day <= end_day and event.date.month == month and event.date.year == year
         ]
 
+        keyboard = get_week_days_keyboard([], week_num, month, year)  # Пустой список дней для кнопки "Назад"
         if not week_events:
-            await callback.message.edit_text("Нет событий на этой неделе.")
+            await callback.message.edit_text(
+                "Нет событий на этой неделе. Вернитесь к выбору месяца.",
+                reply_markup=keyboard
+            )
             await callback.answer()
             return
 
@@ -265,15 +273,17 @@ async def handle_week_back(callback: CallbackQuery, user_repo: UserRepo, group_r
         logger.error(f"Ошибка в handle_week_back: {e}")
         await callback.answer("Произошла ошибка.", show_alert=True)
 
+
 @router.callback_query(F.data.startswith("month_back_"))
 async def handle_month_back(callback: CallbackQuery, state: FSMContext):
+    """Обработчик возврата к выбору месяца."""
     try:
         logger.info(f"handle_month_back called with callback.data: {callback.data}")
-        # Разбиваем данные и извлекаем последние 2 элемента
-        parts = callback.data.split("_")
-        year = parts[-2]  # Предпоследний элемент
-        month = parts[-1]  # Последний элемент
-        year, month = int(year), int(month)
+        # Разбиваем данные и извлекаем год и месяц из последних двух компонентов
+        parts = callback.data.split('_')
+        year = int(parts[-2])  # Предпоследний элемент
+        month = int(parts[-1])  # Последний элемент
+
         selected_month = f"{year}-{month:02d}"
         await state.update_data(current_month=selected_month)
         keyboard = get_month_weeks_keyboard(selected_month)
