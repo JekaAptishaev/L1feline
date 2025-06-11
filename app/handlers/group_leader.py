@@ -165,51 +165,23 @@ async def cancel_event_creation(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 @router.message(F.text == "🔗 Создать приглашение")
-async def start_create_invite(message: Message, state: FSMContext, user_repo: UserRepo):
+async def start_create_invite(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if not user or not user.group_membership or not user.group_membership.is_leader:
-            await message.answer("У вас нет прав для создания приглашений.")
-            return
-
-        await state.set_state(CreateInvite.waiting_for_invite_duration)
-        await message.answer("Введите срок действия приглашения в днях (например, 7):")
-    except Exception as e:
-        logger.error(f"Ошибка в start_create_invite: {e}")
-        await state.clear()
-        await message.answer("Произошла ошибка. Попробуйте позже.")
-
-@router.message(CreateInvite.waiting_for_invite_duration)
-async def process_invite_duration(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
-    try:
-        duration = message.text.strip()
-        try:
-            duration_days = int(duration)
-            if duration_days <= 0:
-                await message.answer("Срок действия должен быть положительным числом.")
-                return
-        except ValueError:
-            await message.answer("Введите целое число дней.")
-            return
-
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if not user or not user.group_membership:
-            await message.answer("Ошибка: вы не состоите в группе.")
+            await message.answer("У вас нет прав для создания ключей доступа.")
             return
 
         group = user.group_membership.group
-        expiry_date = datetime.now().date() + timedelta(days=duration_days)
-        invite_token = await group_repo.create_invite(group.id, user.telegram_id, expiry_date)
-        invite_link = f"https://t.me/L1felinebot?start={invite_token}"
-
+        invite_token = await group_repo.create_invite(group.id, user.telegram_id)
         await state.clear()
         await message.answer(
-            f"Приглашение создано!\nСсылка: {invite_link}\nСрок действия: до {expiry_date.strftime('%Y-%m-%d')}"
+            f"Ключ доступа создан!\nКлюч: {invite_token}\nПередайте этот ключ пользователям для присоединения к группе «{group.name}»."
         )
     except Exception as e:
-        logger.error(f"Ошибка в process_invite_duration: {e}")
+        logger.error(f"Ошибка в start_create_invite: {e}")
         await state.clear()
-        await message.answer("Произошла ошибка при создании приглашения. Попробуйте позже.")
+        await message.answer("Произошла ошибка при создании ключа доступа. Попробуйте позже.")
 
 @router.message(CreateEvent.waiting_for_event_name)
 async def process_event_name(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):

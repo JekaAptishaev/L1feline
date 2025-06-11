@@ -6,7 +6,7 @@ def get_main_menu_unregistered() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🚀 Создать группу")],
-            [KeyboardButton(text="🔗 Присоединиться по ссылке")]
+            [KeyboardButton(text="🔗 Присоединиться по ключу")]
         ],
         resize_keyboard=True
     )

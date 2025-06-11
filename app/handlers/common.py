@@ -1,4 +1,5 @@
 import logging
+import re
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -63,8 +64,8 @@ async def start_create_group(message: Message, state: FSMContext, user_repo: Use
     except Exception as e:
         logger.error(f"Ошибка в start_create_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
-        
-@router.message(F.text == "🔗 Присоединиться по ссылке")
+
+@router.message(F.text == "🔗 Присоединиться по ключу") 
 async def start_join_group(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -73,7 +74,38 @@ async def start_join_group(message: Message, state: FSMContext, user_repo: UserR
             return
 
         await state.set_state(JoinGroup.waiting_for_invite_link)
-        await message.answer("Введите пригласительную ссылку для присоединения к группе:")
+        await message.answer("Введите ключ доступа для присоединения к группе (например, xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx):")
     except Exception as e:
         logger.error(f"Ошибка в start_join_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(JoinGroup.waiting_for_invite_link)
+async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        access_key = message.text.strip()
+        match = re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', access_key)
+        if not match:
+            await message.answer("Неверный формат ключа доступа. Используйте ключ вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.")
+            return
+
+        group = await group_repo.get_group_by_invite(access_key)
+        if not group:
+            await message.answer("Ключ доступа недействителен.")
+            return
+
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user:
+            user = await user_repo.get_or_create_user(
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name
+            )
+
+        await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
+        await state.clear()
+        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!")
+    except Exception as e:
+        logger.error(f"Ошибка в process_invite_link: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
