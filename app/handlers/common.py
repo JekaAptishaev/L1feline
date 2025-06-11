@@ -108,7 +108,7 @@ async def start_join_group(message: Message, state: FSMContext, user_repo: UserR
         logger.error(f"Ошибка в start_join_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(JoinGroup.waiting_for_invite_link)
+@router.message(JoinGroup.waiting_for_invite_token)
 async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         access_key = message.text.strip()
