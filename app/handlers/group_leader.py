@@ -1,14 +1,13 @@
 import logging
 import re
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import GroupRepo, UserRepo
 from app.keyboards.reply import get_main_menu_leader
 from datetime import datetime, timedelta
-import uuid
+import uuid  # Для генерации уникальных идентификаторов
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ class CreateGroup(StatesGroup):
 class JoinGroup(StatesGroup):
     waiting_for_invite_link = State()
 
-class CreateInvite(StatesGroup):
+class CreateInvite(StatesGroup):  # Новый класс для создания приглашения
     waiting_for_invite_duration = State()
 
 class CreateEvent(StatesGroup):
@@ -84,9 +83,10 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
         logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
-
+        
 @router.message(F.text == "👥 Участники группы")
 async def handle_group_members(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
+    """Обработчик для отображения списка участников группы."""
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if not user or not user.group_membership or not user.group_membership.is_leader:
@@ -99,6 +99,7 @@ async def handle_group_members(message: Message, user_repo: UserRepo, group_repo
             await message.answer("В группе пока нет участников.")
             return
 
+        # Формируем список участников
         member_list = []
         for member in members:
             member_user = await user_repo.get_user_with_group_info(member.user_id)
@@ -142,25 +143,10 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
             return
 
         await state.set_state(CreateEvent.waiting_for_event_name)
-        # Создаем инлайн-клавиатуру с кнопкой "Отмена"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Отмена", callback_data="cancel_event_creation")
-        await message.answer("Введите название события:", reply_markup=keyboard.as_markup())
+        await message.answer("Введите название события:")
     except Exception as e:
         logger.error(f"Ошибка в start_create_event: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
-
-@router.callback_query(F.data == "cancel_event_creation")
-async def cancel_event_creation(callback: CallbackQuery, state: FSMContext):
-    try:
-        await state.clear()
-        await callback.message.delete()
-        await callback.message.answer("Создание события отменено.")
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Ошибка в cancel_event_creation: {e}")
-        await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
-        await callback.answer()
 
 @router.message(F.text == "🔗 Создать приглашение")
 async def start_create_invite(message: Message, state: FSMContext, user_repo: UserRepo):
@@ -196,7 +182,7 @@ async def process_invite_duration(message: Message, state: FSMContext, group_rep
             return
 
         group = user.group_membership.group
-        expiry_date = datetime.now().date() + timedelta(days=duration_days)
+        expiry_date = datetime.now().date() + timedelta(days=duration_days)  # Используем timedelta
         invite_token = await group_repo.create_invite(group.id, user.telegram_id, expiry_date)
         invite_link = f"https://t.me/L1felinebot?start={invite_token}"
 
@@ -208,7 +194,7 @@ async def process_invite_duration(message: Message, state: FSMContext, group_rep
         logger.error(f"Ошибка в process_invite_duration: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при создании приглашения. Попробуйте позже.")
-
+        
 @router.message(CreateEvent.waiting_for_event_name)
 async def process_event_name(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
     try:
@@ -238,89 +224,46 @@ async def process_event_date(message: Message, state: FSMContext, group_repo: Gr
 
         await state.update_data(date=event_date)
         await state.set_state(CreateEvent.waiting_for_description)
-        # Создаем инлайн-клавиатуру с кнопкой "Пропустить"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Пропустить", callback_data="skip_description")
-        await message.answer("Введите описание события:", reply_markup=keyboard.as_markup())
+        await message.answer("Введите описание события (или 'Пропустить'):")
     except Exception as e:
         logger.error(f"Ошибка в process_event_date: {e}")
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.callback_query(F.data == "skip_description")
-async def skip_description(callback: CallbackQuery, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
-    try:
-        await state.update_data(description=None)
-        await state.set_state(CreateEvent.waiting_for_subject)
-        # Создаем инлайн-клавиатуру с кнопкой "Пропустить"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Пропустить", callback_data="skip_subject")
-        await callback.message.edit_text("Введите тему события:", reply_markup=keyboard.as_markup())
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Ошибка в skip_description: {e}")
-        await state.clear()
-        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
-        await callback.answer()
-
 @router.message(CreateEvent.waiting_for_description)
 async def process_event_description(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
     try:
-        description = message.text.strip()
+        description = message.text.strip() if message.text.strip().lower() != "пропустить" else None
         await state.update_data(description=description)
         await state.set_state(CreateEvent.waiting_for_subject)
-        # Создаем инлайн-клавиатуру с кнопкой "Пропустить"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Пропустить", callback_data="skip_subject")
-        await message.answer("Введите тему события:", reply_markup=keyboard.as_markup())
+        await message.answer("Введите тему события (или 'Пропустить'):")
     except Exception as e:
         logger.error(f"Ошибка в process_event_description: {e}")
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.callback_query(F.data == "skip_subject")
-async def skip_subject(callback: CallbackQuery, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
-    try:
-        await state.update_data(subject=None)
-        await state.set_state(CreateEvent.waiting_for_importance)
-        # Создаем инлайн-клавиатуру с кнопками "Да" и "Нет"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Да", callback_data="importance_yes")
-        keyboard.button(text="Нет", callback_data="importance_no")
-        await callback.message.edit_text("Является ли событие важным?", reply_markup=keyboard.as_markup())
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Ошибка в skip_subject: {e}")
-        await state.clear()
-        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
-        await callback.answer()
-
 @router.message(CreateEvent.waiting_for_subject)
 async def process_event_subject(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
     try:
-        subject = message.text.strip()
+        subject = message.text.strip() if message.text.strip().lower() != "пропустить" else None
         await state.update_data(subject=subject)
         await state.set_state(CreateEvent.waiting_for_importance)
-        # Создаем инлайн-клавиатуру с кнопками "Да" и "Нет"
-        keyboard = InlineKeyboardBuilder()
-        keyboard.button(text="Да", callback_data="importance_yes")
-        keyboard.button(text="Нет", callback_data="importance_no")
-        await message.answer("Является ли событие важным?", reply_markup=keyboard.as_markup())
+        await message.answer("Является ли событие важным? (Да/Нет)")
     except Exception as e:
         logger.error(f"Ошибка в process_event_subject: {e}")
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.callback_query(F.data.in_(["importance_yes", "importance_no"]))
-async def process_event_importance(callback: CallbackQuery, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+@router.message(CreateEvent.waiting_for_importance)
+async def process_event_importance(message: Message, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
     try:
-        is_important = callback.data == "importance_yes"
+        is_important = message.text.strip().lower() in ["да", "yes"]
         data = await state.get_data()
         event_name = data.get("event_name")
         event_date = data.get("date")
         description = data.get("description")
         subject = data.get("subject")
-        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
         if user and user.group_membership:
             await group_repo.create_event(
                 group_id=user.group_membership.group.id,
@@ -332,13 +275,8 @@ async def process_event_importance(callback: CallbackQuery, state: FSMContext, g
                 is_important=is_important
             )
             await state.clear()
-            await callback.message.delete()
-            await callback.message.answer(f"Событие «{event_name}» на {event_date.strftime('%Y-%m-%d')} создано! {'[Важное]' if is_important else ''}")
-        else:
-            await callback.message.answer("Ошибка: вы не состоите в группе.")
-        await callback.answer()
+            await message.answer(f"Событие «{event_name}» на {event_date.strftime('%Y-%m-%d')} создано! {'[Важное]' if is_important else ''}")
     except Exception as e:
         logger.error(f"Ошибка в process_event_importance: {e}")
         await state.clear()
-        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
-        await callback.answer()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
