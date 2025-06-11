@@ -3,9 +3,9 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from app.handlers import common, admin, calendar, group_assistant, group_leader, regular_member
+from app.handlers import common, admin, calendar, group_assistant, group_leader, regular_member, weekly_calendar
 from app.middlewares.db import DbSessionMiddleware
-from app.config import DATABASE_URL, BOT_TOKEN  # Импортируем напрямую из app.config
+from app.config import DATABASE_URL, BOT_TOKEN
 
 # Настройка логирования
 logging.basicConfig(
@@ -18,7 +18,6 @@ async def main() -> None:
     """Запуск бота и настройка всех компонентов."""
     logger.info("🚀 Запуск бота...")
 
-    # Проверки уже выполнены в app/config.py, но можно оставить для логирования
     if not DATABASE_URL:
         logger.error("❌ DATABASE_URL не найден в переменных окружения!")
         return

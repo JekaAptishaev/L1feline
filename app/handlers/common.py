@@ -4,7 +4,7 @@ from aiogram.types import Message
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from app.db.repository import UserRepo, GroupRepo
-from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader
+from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader,  get_regular_member_menu, get_assistant_menu 
 from app.handlers.group_leader import CreateGroup, JoinGroup
 
 router = Router()
@@ -12,52 +12,41 @@ logger = logging.getLogger(__name__)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
+async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
+    """Обработчик команды /start."""
     try:
-        # Получаем пользователя
-        user = await user_repo.get_user_with_group_info(message.from_user.id)
-        logger.info(f"User from get_user_with_group_info: {user}")
-        if not user:
-            try:
-                user = await user_repo.get_or_create_user(
-                    telegram_id=message.from_user.id,
-                    username=message.from_user.username or "",
-                    first_name=message.from_user.first_name or "",
-                    last_name=message.from_user.last_name
-                )
-                logger.info(f"User created: {user}")
-            except Exception as e:
-                logger.error(f"Ошибка при создании пользователя: {e}", exc_info=True)
-                await message.answer("Не удалось создать пользователя. Попробуйте позже.")
-                return
+        user = await user_repo.get_or_create_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username or "",
+            first_name=message.from_user.first_name or "",
+            last_name=message.from_user.last_name
+        )
+        await state.clear()
 
-        # Проверка на токен приглашения
-        if len(message.text.split()) > 1:
-            invite_token = message.text.split()[1]
-            group = await group_repo.get_group_by_invite(invite_token)
-            if group:
-                await group_repo.add_member(group.id, message.from_user.id, is_leader=False)
-                await message.answer(f"Вы успешно присоединились к группе «{group.name}»!")
-                user = await user_repo.get_user_with_group_info(message.from_user.id)  # Обновляем данные
-            else:
-                await message.answer("Неверный или истёкший код приглашения.")
-
-        # Определяем ответ в зависимости от членства
         if user.group_membership:
-            if user.group_membership.is_leader:
+            group_member = user.group_membership
+            if group_member.is_leader:
                 await message.answer(
-                    f"Добро пожаловать, староста группы «{user.group_membership.group.name}»!",
+                    f"Добро пожаловать, {user.first_name}! Вы староста группы «{group_member.group.name}».",
                     reply_markup=get_main_menu_leader()
                 )
+            elif group_member.is_assistant:
+                await message.answer(
+                    f"Добро пожаловать, {user.first_name}! Вы ассистент группы «{group_member.group.name}».",
+                    reply_markup=get_assistant_menu()
+                )
             else:
-                await message.answer(f"Вы участник группы «{user.group_membership.group.name}»")
+                await message.answer(
+                    f"Добро пожаловать, {user.first_name}! Вы участник группы «{group_member.group.name}».",
+                    reply_markup=get_regular_member_menu()
+                )
         else:
             await message.answer(
-                "👋 Добро пожаловать! Вы еще не состоите в группе.\n\nСоздайте свою или присоединитесь к существующей.",
+                f"Добро пожаловать, {user.first_name}! Вы пока не состоите в группе.",
                 reply_markup=get_main_menu_unregistered()
             )
     except Exception as e:
-        logger.error(f"Ошибка в cmd_start: {e}", exc_info=True)
+        logger.error(f"Ошибка в cmd_start: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
         
 @router.message(F.text == "🚀 Создать группу")

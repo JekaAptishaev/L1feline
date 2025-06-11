@@ -4,9 +4,11 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from app.db.repository import GroupRepo, UserRepo
 from app.keyboards.reply import get_calendar_keyboard
+from app.handlers.weekly_calendar import router as weekly_calendar_router  # Новый импорт
 from datetime import datetime
 
 router = Router()
+router.include_router(weekly_calendar_router)  # Подключаем маршруты недельного календаря
 logger = logging.getLogger(__name__)
 
 @router.message(F.text == "📅 Показать календарь")
@@ -32,7 +34,7 @@ async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo):
         event_id = callback.data.replace("event_", "")
         event = await group_repo.get_event_by_id(event_id)
         if event:
-            details = f"Детали события:\nНазвание: {event.title}\nДата: {event.date.strftime('%Y-%m-%d') if event.date else 'Не указана'}"
+            details = f"Детали события:\nНазвание: {event.title}\nДата: {event.date.strftime('%Y-%m-%d')}"
             if event.description:
                 details += f"\nОписание: {event.description}"
             if event.subject:
