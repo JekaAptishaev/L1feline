@@ -1,14 +1,13 @@
 import re
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
-from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.db.repository import UserRepo, GroupRepo
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.db.repository import UserRepo,  GroupRepo
 from sqlalchemy.orm import selectinload
 from app.db.models import User
 
@@ -25,7 +24,7 @@ def get_month_weeks_keyboard(month: str) -> InlineKeyboardMarkup:
         ("1 неделя (1-7)", f"week_1_{year}_{month}"),
         ("2 неделя (8-14)", f"week_2_{year}_{month}"),
         ("3 неделя (15-21)", f"week_3_{year}_{month}"),
-        ("4 неделя (22-28/30/31)", f"week_4_{year}_{month}"),
+        ("4 неделя (22-28/30/31)", f"week_4_{year}_{month}")
     ]
     inline_keyboard = [
         [InlineKeyboardButton(text=text, callback_data=data)] for text, data in weeks
@@ -34,9 +33,14 @@ def get_month_weeks_keyboard(month: str) -> InlineKeyboardMarkup:
 
 def get_week_days_keyboard(days_with_events, week_num: int, month: int, year: int) -> InlineKeyboardMarkup:
     """Генерирует клавиатуру с днями недели и кнопкой 'Назад к неделям'."""
-    inline_keyboard = [
-        [InlineKeyboardButton(text=str(day), callback_data=f"day_{day}_{month}_{year}")] for day in days_with_events
-    ]
+    inline_keyboard = []
+    for day in days_with_events:
+        # Вычисляем день недели для текущего дня
+        date = datetime(year, month, day)
+        weekday = WEEKDAYS_RU[date.weekday()]
+        button_text = f"{day} ({weekday})"
+        inline_keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"day_{day}_{month}_{year}")])
+    
     inline_keyboard.append([InlineKeyboardButton(text="Назад к неделям", callback_data=f"month_back_{year}_{month}")])
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
@@ -120,6 +124,16 @@ def get_cancel_button(year: int, month: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Отмена", callback_data=f"month_back_{year}_{month}")]
     ])
+
+WEEKDAYS_RU = {
+    0: "Понедельник",
+    1: "Вторник",
+    2: "Среда",
+    3: "Четверг",
+    4: "Пятница",
+    5: "Суббота",
+    6: "Воскресенье"
+}
 
 @router.message(F.text == "📅 Показать календарь")
 async def show_calendar(message: Message, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
@@ -349,7 +363,6 @@ async def handle_week_back(callback: CallbackQuery, user_repo: UserRepo, group_r
     except Exception as e:
         logger.error(f"Ошибка в handle_week_back: {e}")
         await callback.answer("Произошла ошибка.", show_alert=True)
-
 
 @router.callback_query(F.data.startswith("month_back_"))
 async def handle_month_back(callback: CallbackQuery, state: FSMContext):
