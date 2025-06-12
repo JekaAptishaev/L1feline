@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 class SelectWeek(StatesGroup):
     waiting_for_week = State()
 
+class SelectMonth(StatesGroup):
+    waiting_for_month = State()
+
 # Словарь для русских названий месяцев
 MONTHS_RU = {
     1: "Январь",
@@ -76,8 +79,8 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
     if not show_week_selection:
         nav_buttons = [
             InlineKeyboardButton(text="Выбрать неделю", callback_data="select_week"),
-            InlineKeyboardButton(text="Предыдущая неделя", callback_data=f"week_{week_offset-1}"),
-            InlineKeyboardButton(text="Следующая неделя", callback_data=f"week_{week_offset+1}")
+            InlineKeyboardButton(text="Прошлая", callback_data=f"week_{week_offset-1}"),
+            InlineKeyboardButton(text="Следующая", callback_data=f"week_{week_offset+1}")
         ]
         inline_keyboard.append(nav_buttons)
     else:
@@ -91,7 +94,22 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
             InlineKeyboardButton(text="Назад", callback_data=f"shift_weeks_{week_offset-1}"),
             InlineKeyboardButton(text="Вперёд", callback_data=f"shift_weeks_{week_offset+1}")
         ])
+        # Кнопка "Выбрать месяц"
+        inline_keyboard.append([InlineKeyboardButton(text="Выбрать месяц", callback_data="select_month")])
     
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+def get_month_selection_keyboard():
+    """Генерирует клавиатуру с 12 месяцами."""
+    inline_keyboard = []
+    months = list(MONTHS_RU.items())
+    for i in range(0, 12, 3):
+        row = [
+            InlineKeyboardButton(text=month_name, callback_data=f"month_{month_num}")
+            for month_num, month_name in months[i:i+3]
+        ]
+        inline_keyboard.append(row)
+    inline_keyboard.append([InlineKeyboardButton(text="Назад", callback_data="select_week")])
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 def get_event_back_button():
@@ -123,7 +141,7 @@ async def show_calendar(message: Message, user_repo: UserRepo, group_repo: Group
             f"Неделя с {start_day} {start_month} по {end_day} {end_month}",
             reply_markup=keyboard
         )
-        await state.update_data(week_offset=0)  # Сохраняем текущий смещение
+        await state.update_data(week_offset=0, current_year=datetime.now().year)  # Сохраняем текущий год
     except Exception as e:
         logger.error(f"Ошибка в show_calendar: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
@@ -181,6 +199,63 @@ async def start_select_week(callback: CallbackQuery, user_repo: UserRepo, group_
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в start_select_week: {e}")
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data == "select_month")
+async def start_select_month(callback: CallbackQuery, state: FSMContext):
+    """Обработчик начала выбора месяца."""
+    try:
+        data = await state.get_data()
+        current_year = data.get("current_year", datetime.now().year)
+        keyboard = get_month_selection_keyboard()
+        await callback.message.edit_text(
+            f"Выберите месяц для {current_year} года:",
+            reply_markup=keyboard
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в start_select_month: {e}")
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data.startswith("month_"))
+async def handle_month_selection(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
+    """Обработчик выбора месяца."""
+    try:
+        month = int(callback.data.split("_")[1])
+        data = await state.get_data()
+        current_year = data.get("current_year", datetime.now().year)
+        
+        # Вычисляем смещение недели так, чтобы 1-е число месяца попало в первую неделю
+        first_day = datetime(current_year, month, 1).date()
+        week_start = first_day - timedelta(days=first_day.weekday())  # Понедельник той недели
+        today = datetime.now().date()
+        current_week_start = today - timedelta(days=today.weekday())
+        offset = (week_start - current_week_start).days // 7  # Смещение относительно текущей недели
+
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
+            await callback.message.edit_text("Вы не состоите в группе.")
+            await callback.answer()
+            return
+
+        group = user.group_membership.group
+        start_of_week, end_of_week = get_week_dates(offset)
+        events = await group_repo.get_group_events(group.id)
+        week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
+        
+        start_day = start_of_week.strftime("%d").lstrip("0")
+        start_month = MONTHS_RU[start_of_week.month]
+        end_day = end_of_week.strftime("%d").lstrip("0")
+        end_month = MONTHS_RU[end_of_week.month]
+        keyboard = get_weekly_calendar_keyboard(week_events, start_of_week, week_offset=offset)
+        await callback.message.edit_text(
+            f"Неделя с {start_day} {start_month} по {end_day} {end_month}",
+            reply_markup=keyboard
+        )
+        await state.update_data(week_offset=offset, current_year=current_year)
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в handle_month_selection: {e}")
         await callback.answer("Произошла ошибка.", show_alert=True)
 
 @router.callback_query(F.data.startswith("shift_weeks_"))
