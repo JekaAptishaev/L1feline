@@ -3,7 +3,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete
-from app.db.models import User, Group, GroupMember, Event, Invite
+from app.db.models import User, Group, GroupMember, Event, Invite, TopicList, Topic, TopicSelection, Queue, QueueParticipant
 from datetime import datetime, timedelta
 import uuid
 import logging
@@ -49,7 +49,7 @@ class UserRepo:
             return user
         except Exception as e:
             logger.error(f"Ошибка при получении/создании пользователя: {e}", exc_info=True)
-        raise
+            raise
 
     async def get_user_with_group_info(self, telegram_id: int) -> User | None:
         """Получает пользователя и информацию о его группе одним запросом."""
@@ -164,7 +164,15 @@ class GroupRepo:
 
     async def get_group_events(self, group_id: str):
         """Возвращает все события группы с сортировкой по дате."""
-        stmt = select(Event).where(Event.group_id == group_id).order_by(Event.date)
+        stmt = (
+            select(Event)
+            .where(Event.group_id == group_id)
+            .options(
+                selectinload(Event.topic_lists),
+                selectinload(Event.queues)
+            )
+            .order_by(Event.date)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -175,7 +183,7 @@ class GroupRepo:
         title: str,
         description: str = None,
         subject: str = None,
-        date: datetime.date = None,  # Изменён тип на datetime.date
+        date: datetime.date = None,
         is_important: bool = False
     ) -> Event:
         """Создаёт новое событие с полным набором полей."""
@@ -220,7 +228,14 @@ class GroupRepo:
 
     async def get_event_by_id(self, event_id: str) -> Event | None:
         """Возвращает событие по его ID."""
-        stmt = select(Event).where(Event.id == event_id)
+        stmt = (
+            select(Event)
+            .where(Event.id == event_id)
+            .options(
+                selectinload(Event.topic_lists),
+                selectinload(Event.queues)
+            )
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -231,7 +246,7 @@ class GroupRepo:
                 group_id=group_id,
                 invited_by_user_id=invited_by_user_id,
                 invite_token=invite_token,
-                expires_at=datetime(2100, 1, 1).date()  # Устанавливаем далёкую дату
+                expires_at=datetime(2100, 1, 1).date()
             )
             self.session.add(invite)
             await self.session.commit()
@@ -262,3 +277,203 @@ class GroupRepo:
         else:
             logger.info("Группа не найдена или ключ недействителен")
         return group
+
+    async def create_topic_list(
+        self,
+        event_id: str,
+        title: str,
+        max_participants_per_topic: int,
+        created_by_user_id: int
+    ) -> TopicList:
+        """Создает список тем для события."""
+        try:
+            event = await self.get_event_by_id(event_id)
+            if not event:
+                raise ValueError(f"Событие с ID={event_id} не найдено")
+
+            user_stmt = select(User).where(User.telegram_id == created_by_user_id)
+            user_result = await self.session.execute(user_stmt)
+            if not user_result.scalar_one_or_none():
+                raise ValueError(f"Пользователь с telegram_id={created_by_user_id} не найден")
+
+            topic_list = TopicList(
+                event_id=event_id,
+                title=title,
+                max_participants_per_topic=max_participants_per_topic,
+                created_by_user_id=created_by_user_id
+            )
+            self.session.add(topic_list)
+            await self.session.commit()
+            await self.session.refresh(topic_list)
+            return topic_list
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании списка тем: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при создании списка тем: {e}")
+            await self.session.rollback()
+            raise
+
+    async def create_topic(self, topic_list_id: str, title: str) -> Topic:
+        """Создает тему в списке тем."""
+        try:
+            topic_list_stmt = select(TopicList).where(TopicList.id == topic_list_id)
+            topic_list_result = await self.session.execute(topic_list_stmt)
+            topic_list = topic_list_result.scalar_one_or_none()
+            if not topic_list:
+                raise ValueError(f"Список тем с ID={topic_list_id} не найден")
+
+            topic = Topic(
+                topic_list_id=topic_list_id,
+                title=title
+            )
+            self.session.add(topic)
+            await self.session.commit()
+            await self.session.refresh(topic)
+            return topic
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании темы: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при создании темы: {e}")
+            await self.session.rollback()
+            raise
+
+    async def create_queue(
+        self,
+        event_id: str,
+        title: str,
+        max_participants: int = None
+    ) -> Queue:
+        """Создает очередь для события."""
+        try:
+            event = await self.get_event_by_id(event_id)
+            if not event:
+                raise ValueError(f"Событие с ID={event_id} не найдено")
+
+            queue = Queue(
+                event_id=event_id,
+                title=title,
+                max_participants=max_participants
+            )
+            self.session.add(queue)
+            await self.session.commit()
+            await self.session.refresh(queue)
+            return queue
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании очереди: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при создании очереди: {e}")
+            await self.session.rollback()
+            raise
+
+    async def get_topic_list_by_event(self, event_id: str) -> TopicList | None:
+        """Получает список тем для события."""
+        stmt = (
+            select(TopicList)
+            .where(TopicList.event_id == event_id)
+            .options(selectinload(TopicList.topics))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_queue_by_event(self, event_id: str) -> Queue | None:
+        """Получает очередь для события."""
+        stmt = (
+            select(Queue)
+            .where(Queue.event_id == event_id)
+            .options(selectinload(Queue.participants))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_topics_by_topic_list(self, topic_list_id: str) -> list[Topic]:
+        """Получает все темы из списка тем."""
+        stmt = (
+            select(Topic)
+            .where(Topic.topic_list_id == topic_list_id)
+            .options(selectinload(Topic.selections))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_topic_selections(self, topic_id: str) -> list[TopicSelection]:
+        """Получает выборы пользователей для темы."""
+        stmt = select(TopicSelection).where(TopicSelection.topic_id == topic_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def create_topic_selection(self, topic_id: str, user_id: int) -> TopicSelection:
+        """Создает запись о выборе темы пользователем."""
+        try:
+            topic_stmt = select(Topic).where(Topic.id == topic_id)
+            topic_result = await self.session.execute(topic_stmt)
+            if not topic_result.scalar_one_or_none():
+                raise ValueError(f"Тема с ID={topic_id} не найдена")
+
+            user_stmt = select(User).where(User.telegram_id == user_id)
+            user_result = await self.session.execute(user_stmt)
+            if not user_result.scalar_one_or_none():
+                raise ValueError(f"Пользователь с telegram_id={user_id} не найден")
+
+            selection = TopicSelection(
+                topic_id=topic_id,
+                user_id=user_id
+            )
+            self.session.add(selection)
+            await self.session.commit()
+            await self.session.refresh(selection)
+            return selection
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании выбора темы: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при создании выбора темы: {e}")
+            await self.session.rollback()
+            raise
+
+    async def get_queue_participants(self, queue_id: str) -> list[QueueParticipant]:
+        """Получает участников очереди."""
+        stmt = (
+            select(QueueParticipant)
+            .where(QueueParticipant.queue_id == queue_id)
+            .order_by(QueueParticipant.position)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def create_queue_participant(self, queue_id: str, user_id: int, position: int) -> QueueParticipant:
+        """Добавляет пользователя в очередь."""
+        try:
+            queue_stmt = select(Queue).where(Queue.id == queue_id)
+            queue_result = await self.session.execute(queue_stmt)
+            if not queue_result.scalar_one_or_none():
+                raise ValueError(f"Очередь с ID {queue_id} не найдена")
+
+            user_stmt = select(User).where(User.telegram_id == user_id)
+            user_result = await self.session.execute(user_stmt)
+            if not user_result.scalar_one_or_none():
+                raise ValueError(f"Пользователь с telegram_id {user_id} не найден")
+
+            participant = QueueParticipant(
+                queue_id=queue_id,
+                user_id=user_id,
+                position=position
+            )
+            self.session.add(participant)
+            await self.session.commit()
+            await self.session.refresh(participant)
+            return participant
+        except IntegrityError as e:
+            logger.error(f"Ошибка при добавлении пользователя в очередь: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении пользователя в очередь: {e}")
+            await self.session.rollback()
+            raise

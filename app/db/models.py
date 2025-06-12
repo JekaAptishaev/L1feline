@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Index, ForeignKey, Boolean, Date, BigInteger
+from sqlalchemy import Column, String, DateTime, Index, ForeignKey, Boolean, Date, BigInteger, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, DeclarativeBase
@@ -21,6 +21,8 @@ class User(Base):
     notification_settings = Column(JSONB, nullable=True, doc="Настройки уведомлений пользователя в формате JSON")
 
     group_membership = relationship("GroupMember", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    topic_selections = relationship("TopicSelection", back_populates="user")
+    queue_participants = relationship("QueueParticipant", back_populates="user")
 
     __table_args__ = (
         Index('idx_user_telegram_username', 'telegram_username'),
@@ -42,6 +44,7 @@ class Group(Base):
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     invitations = relationship("Invite", back_populates="group")
+    events = relationship("Event", back_populates="group", cascade="all, delete-orphan")
 
 class GroupMember(Base):
     """Модель участника группы."""
@@ -63,21 +66,26 @@ class GroupMember(Base):
     group = relationship("Group", back_populates="members")
 
 class Event(Base):
+    """Модель события."""
     __tablename__ = 'events'
+
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
     group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
-    created_by_user_id = Column(BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)  # Исправлено на BigInteger
+    created_by_user_id = Column(BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)
     title = Column(String(100), nullable=False)
     description = Column(String(255), nullable=True)
     subject = Column(String(100), nullable=True)
     date = Column(Date, nullable=False)
     is_important = Column(Boolean, default=False)
-    group = relationship("Group", back_populates="events")
 
-Group.events = relationship("Event", back_populates="group", cascade="all, delete-orphan")
+    group = relationship("Group", back_populates="events")
+    topic_lists = relationship("TopicList", back_populates="event", uselist=False, cascade="all, delete-orphan")
+    queues = relationship("Queue", back_populates="event", uselist=False, cascade="all, delete-orphan")
 
 class Invite(Base):
+    """Модель приглашения в группу."""
     __tablename__ = 'groupinvitations'
+
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
     group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
     invited_by_user_id = Column(BigInteger, ForeignKey('users.telegram_id'), nullable=False)
@@ -85,5 +93,66 @@ class Invite(Base):
     expires_at = Column(Date, nullable=False)
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
     group = relationship("Group", back_populates="invitations")
     user = relationship("User", foreign_keys=[invited_by_user_id])
+
+class TopicList(Base):
+    """Модель списка тем для события."""
+    __tablename__ = 'topiclists'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    event_id = Column(UUID(as_uuid=True), ForeignKey('events.id', ondelete='CASCADE'), nullable=False, unique=True)
+    title = Column(String(255), nullable=False)
+    max_participants_per_topic = Column(Integer, nullable=False)
+    created_by_user_id = Column(BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    event = relationship("Event", back_populates="topic_lists")
+    topics = relationship("Topic", back_populates="topic_list", cascade="all, delete-orphan")
+    created_by = relationship("User")
+
+class Topic(Base):
+    """Модель темы в списке тем."""
+    __tablename__ = 'topics'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    topic_list_id = Column(UUID(as_uuid=True), ForeignKey('topiclists.id', ondelete='CASCADE'), nullable=False)
+    title = Column(String(255), nullable=False)
+
+    topic_list = relationship("TopicList", back_populates="topics")
+    selections = relationship("TopicSelection", back_populates="topic", cascade="all, delete-orphan")
+
+class TopicSelection(Base):
+    """Модель выбора темы пользователем."""
+    __tablename__ = 'topicselections'
+
+    topic_id = Column(UUID(as_uuid=True), ForeignKey('topics.id', ondelete='CASCADE'), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), primary_key=True)
+
+    topic = relationship("Topic", back_populates="selections")
+    user = relationship("User", back_populates="topic_selections")
+
+class Queue(Base):
+    """Модель очереди для события."""
+    __tablename__ = 'queues'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    event_id = Column(UUID(as_uuid=True), ForeignKey('events.id', ondelete='CASCADE'), nullable=False, unique=True)
+    title = Column(String(255), nullable=False)
+    max_participants = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    event = relationship("Event", back_populates="queues")
+    participants = relationship("QueueParticipant", back_populates="queue", cascade="all, delete-orphan")
+
+class QueueParticipant(Base):
+    """Модель участника очереди."""
+    __tablename__ = 'queueparticipants'
+
+    queue_id = Column(UUID(as_uuid=True), ForeignKey('queues.id', ondelete='CASCADE'), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), primary_key=True)
+    position = Column(Integer, nullable=False)
+
+    queue = relationship("Queue", back_populates="participants")
+    user = relationship("User", back_populates="queue_participants")

@@ -16,8 +16,9 @@ def get_main_menu_leader() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📅 События")],
-            [KeyboardButton(text="👥 Участники группы*")],
+            [KeyboardButton(text="👥 Участники группы")],
             [KeyboardButton(text="➕ Создать событие")],
+            [KeyboardButton(text="📋 Управление бронированиями")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")],
             [KeyboardButton(text="🔗 Создать приглашение")]
@@ -95,3 +96,43 @@ def get_weekly_calendar_back_button() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад к календарю", callback_data="week_back")]
     ])
+
+def get_cancel_keyboard() -> ReplyKeyboardMarkup:
+    """Возвращает клавиатуру с кнопкой отмены."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_skip_keyboard() -> ReplyKeyboardMarkup:
+    """Возвращает клавиатуру с кнопками пропуска и отмены."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⏭ Пропустить")],
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_slots_type_keyboard() -> ReplyKeyboardMarkup:
+    """Возвращает клавиатуру для выбора типа брони."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🎯 Бронь темы")],
+            [KeyboardButton(text="📍 Бронь места")],
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_edit_slot_keyboard() -> ReplyKeyboardMarkup:
+    """Возвращает клавиатуру для редактирования названия темы."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✏️ Изменить предыдущую")],
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
