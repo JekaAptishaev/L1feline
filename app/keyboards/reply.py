@@ -17,7 +17,9 @@ def get_main_menu_leader() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📅 События")],
             [KeyboardButton(text="👥 Участники группы")],
-            [KeyboardButton(text="➕ Создать событие")],
+            [
+                KeyboardButton(text="➕ Создать событие/бронь"),
+            ],
             [KeyboardButton(text="📋 Управление бронированиями")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")],
@@ -32,7 +34,9 @@ def get_assistant_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📅 События")],
             [KeyboardButton(text="👥 Участники группы")],
-            [KeyboardButton(text="➕ Создать событие")],
+            [
+                KeyboardButton(text="➕ Создать событие/бронь"),
+            ],
             [KeyboardButton(text="📅 Управление событиями")],
             [KeyboardButton(text="📅 Показать календарь")],
             [KeyboardButton(text="📅 Показать недельный календарь")]

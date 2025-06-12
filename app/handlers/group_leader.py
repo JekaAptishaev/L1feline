@@ -32,10 +32,10 @@ class CreateEvent(StatesGroup):
     waiting_for_topic_list_details = State()
     waiting_for_queue_max_participants = State()
 
-@router.message(F.text.in_(["➕ Создать событие", "➕ Создать бронь"]))
+@router.message(F.text == "➕ Создать событие/бронь")
 async def start_create_event(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
-        logger.info(f"Received command '{message.text}' from user_id={message.from_user.id}")
+        logger.info(f"Received command 'Создать событие/бронь' from user_id={message.from_user.id}")
         current_state = await state.get_state()
         if current_state:
             logger.warning(f"User {message.from_user.id} is in state {current_state}. Clearing state.")
@@ -50,6 +50,7 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
             return
 
         await state.set_state(CreateEvent.waiting_for_event_name)
+        await state.update_data(is_booking_required=False)  # Для события с возможностью "Без брони"
         keyboard = InlineKeyboardBuilder()
         keyboard.button(text="Отмена", callback_data="cancel_event_creation")
         await message.reply("Введите название задачи:", reply_markup=keyboard.as_markup())
@@ -57,6 +58,33 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
         logger.error(f"Error in start_create_event for user_id {message.from_user.id}: {e}", exc_info=True)
         await state.clear()
         await message.reply("Ошибка при создании задачи. Попробуйте снова.")
+
+@router.message(F.text == "➕ Создать бронь")
+async def start_create_booking(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        logger.info(f"Received command 'Создать бронь' from user_id={message.from_user.id}")
+        current_state = await state.get_state()
+        if current_state:
+            logger.warning(f"User {message.from_user.id} is in state {current_state}. Clearing state.")
+            await state.clear()
+            await message.reply("Предыдущее действие отменено.")
+
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        logger.debug(f"User data: {user}, membership: {user.group_membership if user else None}")
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            logger.error(f"User {message.from_user.id} has no rights to create bookings.")
+            await message.reply("У вас нет доступа к созданию брони.")
+            return
+
+        await state.set_state(CreateEvent.waiting_for_event_name)
+        await state.update_data(is_booking_required=True)  # Для события с обязательной бронью
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="Отмена", callback_data="cancel_event_creation")
+        await message.reply("Введите название задачи:", reply_markup=keyboard.as_markup())
+    except Exception as e:
+        logger.error(f"Error in start_create_booking for user_id {message.from_user.id}: {e}", exc_info=True)
+        await state.clear()
+        await message.reply("Ошибка при создании брони. Попробуйте снова.")
 
 @router.callback_query(F.data == "cancel_event_creation")
 async def cancel_event_creation(callback: CallbackQuery, state: FSMContext):
@@ -96,12 +124,13 @@ async def process_event_date(message: Message, state: FSMContext):
         logger.info(f"Processing event date from user {message.from_user.id}: {message.text}")
         event_date = message.text.strip()
         try:
-            date_obj = datetime.strptime(event_date, '%Y-%m-%d').date()
-            event_date = date_obj
+            # Проверяем формат, но сохраняем как строку
+            datetime.strptime(event_date, '%Y-%m-%d')
         except ValueError:
             await message.reply("Неверный формат даты. Используйте ГГГГ-ММ-ДД (например, 2025-07-06).")
             return
 
+        # Сохраняем дату как строку
         await state.update_data(date=event_date)
         await state.set_state(CreateEvent.waiting_for_description)
         keyboard = InlineKeyboardBuilder()
@@ -191,9 +220,11 @@ async def process_event_importance(callback: CallbackQuery, state: FSMContext):
         keyboard = InlineKeyboardBuilder()
         keyboard.button(text="Список тем", callback_data="booking_topic_list")
         keyboard.button(text="Очередь", callback_data="booking_queue")
-        keyboard.button(text="Без брони", callback_data="booking_none")
-        keyboard.button(text="Отмена", callback_data="cancel_event_creation")
-        await callback.message.edit_text("Выберите тип брони для задачи:", reply_markup=keyboard.as_markup())
+        data = await state.get_data()
+        if not data.get("is_booking_required", False):
+            keyboard.button(text="Без брони", callback_data="booking_none")
+        message_text = "Выберите тип брони для задачи (список тем или очередь):" if data.get("is_booking_required", False) else "Выберите тип брони для задачи:"
+        await callback.message.edit_text(message_text, reply_markup=keyboard.as_markup())
         await callback.answer()
     except Exception as e:
         logger.error(f"Error in process_event_importance: {e}", exc_info=True)
@@ -218,7 +249,7 @@ async def process_booking_none(callback: CallbackQuery, state: FSMContext, group
             title=data.get("event_name"),
             description=data.get("description"),
             subject=data.get("subject"),
-            date=data["date"],
+            date=data.get("date"),
             is_important=data.get("is_important")
         )
         await state.clear()
@@ -282,18 +313,30 @@ async def process_topic_list_details(message: Message, state: FSMContext, group_
             await message.reply("Вы не состоите в группе.")
             return
 
+        # Преобразуем строку обратно в дату
+        try:
+            date_obj = datetime.strptime(data["date"], '%Y-%m-%d').date()
+        except (KeyError, ValueError) as e:
+            logger.error(f"Ошибка преобразования даты: {e}")
+            await message.reply("Ошибка в формате даты. Начните заново.")
+            await state.clear()
+            return
+
         event = await group_repo.create_event(
             group_id=user.group_membership.group.id,
             created_by_user_id=user.telegram_id,
             title=data.get("event_name"),
             description=data.get("description"),
             subject=data.get("subject"),
-            date=data["date"],
+            date=date_obj,  # Используем объект date
             is_important=data.get("is_important")
         )
 
+        topic_list_title = f"Список тем для {data.get('event_name')}"
         topic_list = await group_repo.create_topic_list(
             event_id=event.id,
+            title=topic_list_title,
+            created_by_user_id=user.telegram_id,
             max_participants_per_topic=max_participants
         )
 
@@ -349,7 +392,7 @@ async def process_queue_no_limit(callback: CallbackQuery, state: FSMContext, gro
             title=data.get("event_name"),
             description=data.get("description"),
             subject=data.get("subject"),
-            date=data["date"],
+            date=data.get("date"),
             is_important=data.get("is_important")
         )
 
@@ -424,7 +467,7 @@ async def process_queue_max_participants(message: Message, state: FSMContext, gr
 async def handle_group_members(message: Message, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
     try:
         current_state = await state.get_state()
-        if current_state in [DeleteMember.waiting_for_member_number, AssignAssistant.waiting_for_member_number, CreateEvent.waiting_for_event_name, CreateEvent.waiting_for_event_date, CreateEvent.waiting_for_description, CreateEvent.waiting_for_subject, CreateEvent.waiting_for_topic_list_details, CreateEvent.waiting_for_queue_max_participants]:
+        if current_state:
             await message.reply("Сначала завершите текущую операцию.")
             return
 
@@ -529,7 +572,6 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
             await state.clear()
             return
 
-        # Удаляем брони участника
         events = await group_repo.get_group_events(group_id)
         for event in events:
             topic_list = await group_repo.get_topic_list_by_event(event.id)
@@ -541,7 +583,6 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
             if queue:
                 await group_repo.delete_queue_participant(queue_id=queue.id, user_id=member_user.telegram_id)
 
-        # Удаляем участника из группы
         await group_repo.delete_member(group_id=group_id, user_id=member_to_delete.user_id)
         await state.clear()
         await message.reply(
@@ -665,7 +706,7 @@ async def create_invite(message: Message, state: FSMContext, user_repo: UserRepo
 async def handle_manage_bookings(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         current_state = await state.get_state()
-        if current_state in [ManageBookings.waiting_for_event_number, ManageBookings.waiting_for_booking_type, ManageBookings.waiting_for_booking_entry_number, CreateEvent.waiting_for_event_name, CreateEvent.waiting_for_event_date, CreateEvent.waiting_for_description, CreateEvent.waiting_for_subject, CreateEvent.waiting_for_topic_list_details, CreateEvent.waiting_for_queue_max_participants]:
+        if current_state:
             await message.reply("Сначала завершите текущую операцию.")
             return
 
