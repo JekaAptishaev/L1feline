@@ -12,6 +12,22 @@ logger = logging.getLogger(__name__)
 class SelectWeek(StatesGroup):
     waiting_for_week = State()
 
+# Словарь для русских названий месяцев
+MONTHS_RU = {
+    1: "Январь",
+    2: "Февраль",
+    3: "Март",
+    4: "Апрель",
+    5: "Май",
+    6: "Июнь",
+    7: "Июль",
+    8: "Август",
+    9: "Сентябрь",
+    10: "Октябрь",
+    11: "Ноябрь",
+    12: "Декабрь"
+}
+
 def get_week_dates(offset=0, base_date=None):
     """Возвращает даты начала и конца недели с учетом смещения."""
     if base_date is None:
@@ -24,11 +40,13 @@ def get_week_dates(offset=0, base_date=None):
 def format_week_label(start_date):
     """Форматирует метку недели, например, '02-08 Сентябрь'."""
     end_date = start_date + timedelta(days=6)
-    start_day = start_date.strftime("%d")
-    end_day = end_date.strftime("%d")
-    month_name = start_date.strftime("%B").capitalize()
+    start_day = start_date.strftime("%d").lstrip("0")  # Убираем ведущий ноль
+    end_day = end_date.strftime("%d").lstrip("0")
+    start_month = MONTHS_RU[start_date.month]
+    month_name = start_month
     if start_date.month != end_date.month:
-        month_name += f"-{end_date.strftime('%B').capitalize()}"
+        end_month = MONTHS_RU[end_date.month]
+        month_name = f"{start_month}-{end_month}"
     return f"{start_day}-{end_day} {month_name}"
 
 def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=False, week_offset=0):
@@ -38,7 +56,9 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
     # Кнопки для событий
     if events and not show_week_selection:
         for event in sorted(events, key=lambda e: e.date):
-            button_text = f"{event.date.strftime('%d %B')}: {event.title} {'[Важное]' if event.is_important else ''}"
+            day = event.date.strftime("%d").lstrip("0")
+            month = MONTHS_RU[event.date.month]
+            button_text = f"{day} {month}: {event.title} {'[Важное]' if event.is_important else ''}"
             inline_keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"event_{event.id}")])
     
     # Кнопки навигации
@@ -83,9 +103,11 @@ async def show_calendar(message: Message, user_repo: UserRepo, group_repo: Group
         events = await group_repo.get_group_events(group.id)
         week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
         
+        day = start_of_week.strftime("%d").lstrip("0")
+        month = MONTHS_RU[start_of_week.month]
         keyboard = get_weekly_calendar_keyboard(week_events, start_of_week)
         await message.answer(
-            f"Календарь событий группы «{group.name}» (неделя с {start_of_week.strftime('%d %B')}):",
+            f"Календарь событий группы «{group.name}» (неделя с {day} {month}):",
             reply_markup=keyboard
         )
         await state.update_data(week_offset=0)  # Сохраняем текущий смещение
@@ -109,9 +131,11 @@ async def handle_week_selection(callback: CallbackQuery, user_repo: UserRepo, gr
         events = await group_repo.get_group_events(group.id)
         week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
         
+        day = start_of_week.strftime("%d").lstrip("0")
+        month = MONTHS_RU[start_of_week.month]
         keyboard = get_weekly_calendar_keyboard(week_events, start_of_week, week_offset=offset)
         await callback.message.edit_text(
-            f"Календарь событий группы «{group.name}» (неделя с {start_of_week.strftime('%d %B')}):",
+            f"Календарь событий группы «{group.name}» (неделя с {day} {month}):",
             reply_markup=keyboard
         )
         await state.update_data(week_offset=offset)
@@ -175,10 +199,13 @@ async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo):
         event_id = callback.data.replace("event_", "")
         event = await group_repo.get_event_by_id(event_id)
         if event:
+            day = event.date.strftime("%d").lstrip("0")
+            month = MONTHS_RU[event.date.month]
+            year = event.date.strftime("%Y")
             details = (
                 f"Детали события:\n"
                 f"Название: {event.title}\n"
-                f"Дата: {event.date.strftime('%d %B %Y')}\n"
+                f"Дата: {day} {month} {year}\n"
             )
             if event.description:
                 details += f"Описание: {event.description}\n"
