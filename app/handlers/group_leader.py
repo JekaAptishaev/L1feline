@@ -161,13 +161,3 @@ async def start_create_invite(message: Message, state: FSMContext, user_repo: Us
         logger.error(f"Ошибка в start_create_invite: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при создании ключа доступа. Попробуйте позже.")
-
-# Добавляем фильтр для других команд старосты, чтобы они не работали в состоянии удаления
-@router.message(F.text.in_(["📅 События", "➕ Создать событие", "📅 Показать календарь", "📅 Показать недельный календарь"]))
-async def block_commands_in_delete_state(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state == DeleteMember.waiting_for_member_number:
-        await message.answer("Сначала завершите процесс удаления участника.")
-        return
-    # Если не в состоянии удаления, пропускаем команду дальше
-    raise Router.HandlerNotFinishedError
