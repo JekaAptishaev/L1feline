@@ -5,7 +5,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import GroupRepo, UserRepo
-from app.keyboards.reply import get_main_menu_leader, get_assistant_menu, get_regular_member_menu
+from app.keyboards.reply import get_main_menu_leader, get_assistant_menu, get_regular_member_menu, get_main_menu_unregistered
 
 
 router = Router()
@@ -185,7 +185,7 @@ async def cancel_remove_assistant(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 @router.message(DeleteMember.waiting_for_member_number)
-async def process_delete_member(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+async def process_delete_member(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo, bot: Bot):
     try:
         data = await state.get_data()
         members = data.get("members")
@@ -219,6 +219,11 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
 
         # Удаляем участника
         await group_repo.delete_member(group_id=group_id, user_id=member_to_delete.user_id)
+        await bot.send_message(
+            member_user.telegram_id,
+            "Вас выгнали из группы.",
+            reply_markup=get_main_menu_unregistered()
+        )
         await state.clear()
         await message.answer(
             f"Участник {member_user.first_name} {member_user.last_name or ''} удалён из группы.",
