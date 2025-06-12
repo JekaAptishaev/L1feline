@@ -28,6 +28,17 @@ MONTHS_RU = {
     12: "Декабрь"
 }
 
+# Словарь для русских названий дней недели
+WEEKDAYS_RU = {
+    0: "Понедельник",
+    1: "Вторник",
+    2: "Среда",
+    3: "Четверг",
+    4: "Пятница",
+    5: "Суббота",
+    6: "Воскресенье"
+}
+
 def get_week_dates(offset=0, base_date=None):
     """Возвращает даты начала и конца недели с учетом смещения."""
     if base_date is None:
@@ -38,7 +49,7 @@ def get_week_dates(offset=0, base_date=None):
     return start_of_week, end_of_week
 
 def format_week_label(start_date):
-    """Форматирует метку недели, например, '02-08 Сентябрь'."""
+    """Форматирует метку недели, например, '2-8 Сентябрь'."""
     end_date = start_date + timedelta(days=6)
     start_day = start_date.strftime("%d").lstrip("0")  # Убираем ведущий ноль
     end_day = end_date.strftime("%d").lstrip("0")
@@ -57,8 +68,8 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
     if events and not show_week_selection:
         for event in sorted(events, key=lambda e: e.date):
             day = event.date.strftime("%d").lstrip("0")
-            month = MONTHS_RU[event.date.month]
-            button_text = f"{day} {month}: {event.title} {'[Важное]' if event.is_important else ''}"
+            weekday = WEEKDAYS_RU[event.date.weekday()]
+            button_text = f"{day} {weekday}: {event.title} {'[Важное]' if event.is_important else ''}"
             inline_keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"event_{event.id}")])
     
     # Кнопки навигации
@@ -103,11 +114,13 @@ async def show_calendar(message: Message, user_repo: UserRepo, group_repo: Group
         events = await group_repo.get_group_events(group.id)
         week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
         
-        day = start_of_week.strftime("%d").lstrip("0")
-        month = MONTHS_RU[start_of_week.month]
+        start_day = start_of_week.strftime("%d").lstrip("0")
+        start_month = MONTHS_RU[start_of_week.month]
+        end_day = end_of_week.strftime("%d").lstrip("0")
+        end_month = MONTHS_RU[end_of_week.month]
         keyboard = get_weekly_calendar_keyboard(week_events, start_of_week)
         await message.answer(
-            f"Календарь событий группы «{group.name}» (неделя с {day} {month}):",
+            f"Неделя с {start_day} {start_month} по {end_day} {end_month}",
             reply_markup=keyboard
         )
         await state.update_data(week_offset=0)  # Сохраняем текущий смещение
@@ -131,11 +144,13 @@ async def handle_week_selection(callback: CallbackQuery, user_repo: UserRepo, gr
         events = await group_repo.get_group_events(group.id)
         week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
         
-        day = start_of_week.strftime("%d").lstrip("0")
-        month = MONTHS_RU[start_of_week.month]
+        start_day = start_of_week.strftime("%d").lstrip("0")
+        start_month = MONTHS_RU[start_of_week.month]
+        end_day = end_of_week.strftime("%d").lstrip("0")
+        end_month = MONTHS_RU[end_of_week.month]
         keyboard = get_weekly_calendar_keyboard(week_events, start_of_week, week_offset=offset)
         await callback.message.edit_text(
-            f"Календарь событий группы «{group.name}» (неделя с {day} {month}):",
+            f"Неделя с {start_day} {start_month} по {end_day} {end_month}",
             reply_markup=keyboard
         )
         await state.update_data(week_offset=offset)
