@@ -3,7 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from app.handlers import common, admin, calendar, group_assistant, group_leader, group_member, weekly_calendar
+from app.handlers import common, admin, calendar, group_assistant, group_leader, group_member
 from app.middlewares.db import DbSessionMiddleware
 from app.config import DATABASE_URL, BOT_TOKEN
 
