@@ -5,7 +5,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import GroupRepo, UserRepo
-from app.keyboards.reply import get_main_menu_leader
+from app.keyboards.reply import get_main_menu_leader, get_main_menu_unregistered
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -331,13 +331,35 @@ async def start_create_invite(message: Message, state: FSMContext, user_repo: Us
             return
 
         group = user.group_membership.group
-        
         invite_token = await group_repo.create_invite(group.id, user.telegram_id)
         await state.clear()
         await message.answer(
-            f"Ключ доступа создан!\nКлюч: {invite_token}\nПередайте этот ключ пользователям для присоединения к группе «{group.name}»."
+            f"Ключ доступа для группы «{group.name}» успешно создан! Передайте его пользователям для присоединения."
         )
+        await message.answer(invite_token)
     except Exception as e:
         logger.error(f"Ошибка в start_create_invite: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при создании ключа доступа. Попробуйте позже.")
+
+@router.message(F.text == "🗑 Удалить группу")
+async def delete_group(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            await message.answer("У вас нет прав для удаления группы.")
+            return
+
+        group = user.group_membership.group
+        success = await group_repo.delete_group(group_id=str(group.id), leader_id=user.telegram_id)
+        if success:
+            await state.clear()
+            await message.answer(
+                f"Группа «{group.name}» успешно удалена.",
+                reply_markup=get_main_menu_unregistered()
+            )
+        else:
+            await message.answer("Не удалось удалить группу. Убедитесь, что вы лидер группы.")
+    except Exception as e:
+        logger.error(f"Ошибка в delete_group: {e}")
+        await message.answer("Произошла ошибка при удалении группы. Попробуйте позже.")
