@@ -41,17 +41,17 @@ async def handle_group_members(message: Message, user_repo: UserRepo, group_repo
             member_user = await user_repo.get_user_with_group_info(member.user_id)
             if member_user:
                 role = "Староста" if member.is_leader else "Ассистент" if member.is_assistant else "Участник"
-                member_info = f"{idx}. {member_user.first_name} {member_user.last_name or ''} (@{member_user.telegram_username or 'без имени'}) - {role}"
+                full_name = f"{member_user.last_name or ''} {member_user.first_name} {member_user.middle_name or ''}".strip()
+                member_info = f"{idx}. {full_name} (@{member_user.telegram_username or 'без имени'}) - {role}"
                 member_list.append(member_info)
 
         response = f"Участники группы «{group.name}»:\n" + "\n".join(member_list)
         
-        # Добавляем инлайн-кнопки для старосты
         keyboard = InlineKeyboardBuilder()
         keyboard.button(text="Удалить", callback_data="delete_member")
         keyboard.button(text="Сделать ассистентом", callback_data="make_assistant")
         keyboard.button(text="Убрать ассистента", callback_data="remove_assistant")
-        keyboard.adjust(2)  # Располагаем кнопки в два столбца
+        keyboard.adjust(2)
         await message.answer(response, reply_markup=keyboard.as_markup())
     except Exception as e:
         logger.error(f"Ошибка в handle_group_members: {e}", exc_info=True)
@@ -73,7 +73,6 @@ async def start_delete_member(callback: CallbackQuery, state: FSMContext, user_r
             await callback.answer()
             return
 
-        # Сохраняем список участников в состоянии
         await state.update_data(members=members, group_id=group.id)
         await state.set_state(DeleteMember.waiting_for_member_number)
         keyboard = InlineKeyboardBuilder()
@@ -102,7 +101,6 @@ async def start_make_assistant(callback: CallbackQuery, state: FSMContext, user_
             await callback.answer()
             return
 
-        # Сохраняем список участников в состоянии
         await state.update_data(members=members, group_id=group.id)
         await state.set_state(MakeAssistant.waiting_for_member_number)
         keyboard = InlineKeyboardBuilder()
@@ -131,7 +129,6 @@ async def start_remove_assistant(callback: CallbackQuery, state: FSMContext, use
             await callback.answer()
             return
 
-        # Сохраняем список участников в состоянии
         await state.update_data(members=members, group_id=group.id)
         await state.set_state(RemoveAssistant.waiting_for_member_number)
         keyboard = InlineKeyboardBuilder()
@@ -210,13 +207,11 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
             await state.clear()
             return
 
-        # Проверяем, не пытается ли староста удалить самого себя
         if member_user.telegram_id == message.from_user.id:
             await message.answer("Вы не можете удалить самого себя из группы.")
             await state.clear()
             return
 
-        # Удаляем участника
         await group_repo.delete_member(group_id=group_id, user_id=member_to_delete.user_id)
         await state.clear()
         await message.answer(
@@ -255,7 +250,6 @@ async def process_make_assistant(message: Message, state: FSMContext, user_repo:
             await state.clear()
             return
 
-        # Проверяем, не пытается ли назначить ассистентом старосту или уже ассистента
         if member_to_update.is_leader:
             await message.answer("Этот пользователь уже является старостой.")
             await state.clear()
@@ -265,7 +259,6 @@ async def process_make_assistant(message: Message, state: FSMContext, user_repo:
             await state.clear()
             return
 
-        # Назначаем ассистентом
         await group_repo.make_assistant(group_id=group_id, user_id=member_to_update.user_id)
         await state.clear()
         await message.answer(
@@ -304,13 +297,11 @@ async def process_remove_assistant(message: Message, state: FSMContext, user_rep
             await state.clear()
             return
 
-        # Проверяем, является ли пользователь ассистентом
         if not member_to_update.is_assistant:
             await message.answer("Этот пользователь не является ассистентом.")
             await state.clear()
             return
 
-        # Снимаем роль ассистента
         await group_repo.remove_assistant(group_id=group_id, user_id=member_to_update.user_id)
         await state.clear()
         await message.answer(
