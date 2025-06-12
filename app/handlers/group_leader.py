@@ -16,15 +16,15 @@ class CreateInvite(StatesGroup):
 class DeleteMember(StatesGroup):
     waiting_for_member_number = State()
 
+class MakeAssistant(StatesGroup):
+    waiting_for_member_number = State()
+
+class RemoveAssistant(StatesGroup):
+    waiting_for_member_number = State()
+
 @router.message(F.text == "👥 Участники группы*")
 async def handle_group_members(message: Message, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
     try:
-        # Проверяем, находится ли пользователь в состоянии удаления
-        current_state = await state.get_state()
-        if current_state == DeleteMember.waiting_for_member_number:
-            await message.answer("Сначала завершите процесс удаления участника.")
-            return
-
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if not user or not user.group_membership or not user.group_membership.is_leader:
             await message.answer("У вас нет прав для просмотра участников группы.")
@@ -46,9 +46,12 @@ async def handle_group_members(message: Message, user_repo: UserRepo, group_repo
 
         response = f"Участники группы «{group.name}»:\n" + "\n".join(member_list)
         
-        # Добавляем инлайн-кнопку "Удалить" только для старосты
+        # Добавляем инлайн-кнопки для старосты
         keyboard = InlineKeyboardBuilder()
         keyboard.button(text="Удалить", callback_data="delete_member")
+        keyboard.button(text="Сделать ассистентом", callback_data="make_assistant")
+        keyboard.button(text="Убрать ассистента", callback_data="remove_assistant")
+        keyboard.adjust(2)  # Располагаем кнопки в два столбца
         await message.answer(response, reply_markup=keyboard.as_markup())
     except Exception as e:
         logger.error(f"Ошибка в handle_group_members: {e}", exc_info=True)
@@ -70,16 +73,73 @@ async def start_delete_member(callback: CallbackQuery, state: FSMContext, user_r
             await callback.answer()
             return
 
-        # Сохраняем список участников в состоянии для последующего использования
+        # Сохраняем список участников в состоянии
         await state.update_data(members=members, group_id=group.id)
         await state.set_state(DeleteMember.waiting_for_member_number)
-        # Отправляем новое сообщение вместо редактирования
         keyboard = InlineKeyboardBuilder()
         keyboard.button(text="Отмена", callback_data="cancel_delete_member")
         await callback.message.answer("Введите номер участника, которого желаете удалить:", reply_markup=keyboard.as_markup())
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в start_delete_member: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data == "make_assistant")
+async def start_make_assistant(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            await callback.message.answer("У вас нет прав для назначения ассистентов.")
+            await callback.answer()
+            return
+
+        group = user.group_membership.group
+        members = await group_repo.get_group_members(group.id)
+        if not members:
+            await callback.message.answer("В группе пока нет участников.")
+            await callback.answer()
+            return
+
+        # Сохраняем список участников в состоянии
+        await state.update_data(members=members, group_id=group.id)
+        await state.set_state(MakeAssistant.waiting_for_member_number)
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="Отмена", callback_data="cancel_make_assistant")
+        await callback.message.answer("Введите номер участника, которого желаете сделать ассистентом:", reply_markup=keyboard.as_markup())
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в start_make_assistant: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data == "remove_assistant")
+async def start_remove_assistant(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership or not user.group_membership.is_leader:
+            await callback.message.answer("У вас нет прав для снятия ассистентов.")
+            await callback.answer()
+            return
+
+        group = user.group_membership.group
+        members = await group_repo.get_group_members(group.id)
+        if not members:
+            await callback.message.answer("В группе пока нет участников.")
+            await callback.answer()
+            return
+
+        # Сохраняем список участников в состоянии
+        await state.update_data(members=members, group_id=group.id)
+        await state.set_state(RemoveAssistant.waiting_for_member_number)
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="Отмена", callback_data="cancel_remove_assistant")
+        await callback.message.answer("Введите номер участника, с которого желаете снять роль ассистента:", reply_markup=keyboard.as_markup())
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в start_remove_assistant: {e}")
         await state.clear()
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
@@ -93,6 +153,32 @@ async def cancel_delete_member(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в cancel_delete_member: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data == "cancel_make_assistant")
+async def cancel_make_assistant(callback: CallbackQuery, state: FSMContext):
+    try:
+        await state.clear()
+        await callback.message.delete()
+        await callback.message.answer("Назначение ассистента отменено.", reply_markup=get_main_menu_leader())
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в cancel_make_assistant: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data == "cancel_remove_assistant")
+async def cancel_remove_assistant(callback: CallbackQuery, state: FSMContext):
+    try:
+        await state.clear()
+        await callback.message.delete()
+        await callback.message.answer("Снятие роли ассистента отменено.", reply_markup=get_main_menu_leader())
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в cancel_remove_assistant: {e}")
         await state.clear()
         await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
         await callback.answer()
@@ -141,6 +227,100 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
         logger.error(f"Ошибка в process_delete_member: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при удалении участника. Попробуйте позже.")
+
+@router.message(MakeAssistant.waiting_for_member_number)
+async def process_make_assistant(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        data = await state.get_data()
+        members = data.get("members")
+        group_id = data.get("group_id")
+        if not members or not group_id:
+            await message.answer("Ошибка: данные об участниках или группе отсутствуют.")
+            await state.clear()
+            return
+
+        try:
+            member_number = int(message.text.strip())
+            if member_number < 1 or member_number > len(members):
+                await message.answer("Неверный номер участника. Попробуйте снова.")
+                return
+        except ValueError:
+            await message.answer("Пожалуйста, введите корректный номер участника (число).")
+            return
+
+        member_to_update = members[member_number - 1]
+        member_user = await user_repo.get_user_with_group_info(member_to_update.user_id)
+        if not member_user:
+            await message.answer("Ошибка: пользователь не найден.")
+            await state.clear()
+            return
+
+        # Проверяем, не пытается ли назначить ассистентом старосту или уже ассистента
+        if member_to_update.is_leader:
+            await message.answer("Этот пользователь уже является старостой.")
+            await state.clear()
+            return
+        if member_to_update.is_assistant:
+            await message.answer("Этот пользователь уже является ассистентом.")
+            await state.clear()
+            return
+
+        # Назначаем ассистентом
+        await group_repo.make_assistant(group_id=group_id, user_id=member_to_update.user_id)
+        await state.clear()
+        await message.answer(
+            f"Участник {member_user.first_name} {member_user.last_name or ''} назначен ассистентом.",
+            reply_markup=get_main_menu_leader()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в process_make_assistant: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка при назначении ассистента. Попробуйте позже.")
+
+@router.message(RemoveAssistant.waiting_for_member_number)
+async def process_remove_assistant(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        data = await state.get_data()
+        members = data.get("members")
+        group_id = data.get("group_id")
+        if not members or not group_id:
+            await message.answer("Ошибка: данные об участниках или группе отсутствуют.")
+            await state.clear()
+            return
+
+        try:
+            member_number = int(message.text.strip())
+            if member_number < 1 or member_number > len(members):
+                await message.answer("Неверный номер участника. Попробуйте снова.")
+                return
+        except ValueError:
+            await message.answer("Пожалуйста, введите корректный номер участника (число).")
+            return
+
+        member_to_update = members[member_number - 1]
+        member_user = await user_repo.get_user_with_group_info(member_to_update.user_id)
+        if not member_user:
+            await message.answer("Ошибка: пользователь не найден.")
+            await state.clear()
+            return
+
+        # Проверяем, является ли пользователь ассистентом
+        if not member_to_update.is_assistant:
+            await message.answer("Этот пользователь не является ассистентом.")
+            await state.clear()
+            return
+
+        # Снимаем роль ассистента
+        await group_repo.remove_assistant(group_id=group_id, user_id=member_to_update.user_id)
+        await state.clear()
+        await message.answer(
+            f"С участника {member_user.first_name} {member_user.last_name or ''} снята роль ассистента.",
+            reply_markup=get_main_menu_leader()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в process_remove_assistant: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка при снятии роли ассистента. Попробуйте позже.")
 
 @router.message(F.text == "🔗 Создать приглашение")
 async def start_create_invite(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):

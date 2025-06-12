@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from app.db.models import User, Group, GroupMember, Event, Invite
 from datetime import datetime, timedelta
 import uuid
@@ -153,6 +153,58 @@ class GroupRepo:
             raise
         except Exception as e:
             logger.error(f"Ошибка при удалении участника: {e}")
+            await self.session.rollback()
+            raise
+
+    async def make_assistant(self, group_id: str, user_id: int):
+        try:
+            stmt = (
+                select(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+            )
+            result = await self.session.execute(stmt)
+            member = result.scalar_one_or_none()
+            if not member:
+                raise ValueError(f"Участник с user_id={user_id} не найден в группе group_id={group_id}")
+
+            await self.session.execute(
+                update(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+                .values(is_assistant=True)
+            )
+            await self.session.commit()
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при назначении помощника: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при назначении помощника: {e}")
+            await self.session.rollback()
+            raise
+
+    async def remove_assistant(self, group_id: str, user_id: int):
+        try:
+            stmt = (
+                select(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+            )
+            result = await self.session.execute(stmt)
+            member = result.scalar_one_or_none()
+            if not member:
+                raise ValueError(f"Участник с user_id={user_id} не найден в группе group_id={group_id}")
+
+            await self.session.execute(
+                update(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+                .values(is_assistant=False)
+            )
+            await self.session.commit()
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при снятии роли помощника: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при снятии роли помощника: {e}")
             await self.session.rollback()
             raise
 

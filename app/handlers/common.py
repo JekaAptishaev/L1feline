@@ -101,7 +101,7 @@ async def start_join_group(message: Message, state: FSMContext, user_repo: UserR
         if user.group_membership:
             await message.answer("Вы уже состоите в группе. Нельзя присоединиться к другой.")
             return
-        await state.set_state(JoinGroup.waiting_for_invite_link)
+        await state.set_state(JoinGroup.waiting_for_invite_token)
         await message.answer("Введите ключ доступа для присоединения к группе (например, xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx):")
 
     except Exception as e:
@@ -120,7 +120,6 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
         group = await group_repo.get_group_by_invite(access_key)
         if not group:
             await message.answer("Ключ доступа недействителен.")
-
             return
 
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -134,7 +133,8 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
 
         await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
         await state.clear()
-        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!")
+        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!",
+                             reply_markup=get_regular_member_menu())
     except Exception as e:
         logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()
