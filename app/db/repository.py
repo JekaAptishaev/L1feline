@@ -258,6 +258,21 @@ class GroupRepo:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_group_members_except_user(self, group_id: str, exclude_user_id: int):
+        """Возвращает список участников группы, кроме указанного пользователя."""
+        try:
+            stmt = (
+                select(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id != exclude_user_id)
+            )
+            result = await self.session.execute(stmt)
+            members = result.scalars().all()
+            logger.debug(f"Получено {len(members)} участников группы {group_id}, исключая user_id={exclude_user_id}")
+            return members
+        except Exception as e:
+            logger.error(f"Ошибка при получении участников группы, исключая пользователя: {e}")
+            raise
+
     async def get_group_events(self, group_id: str):
         """Возвращает все события группы с сортировкой по дате."""
         stmt = select(Event).where(Event.group_id == group_id).order_by(Event.date)

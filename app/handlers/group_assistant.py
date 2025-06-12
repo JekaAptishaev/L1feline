@@ -1,5 +1,5 @@
 import logging
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.state import StatesGroup, State
@@ -18,16 +18,6 @@ class CreateEvent(StatesGroup):
     waiting_for_description = State()
     waiting_for_subject = State()
     waiting_for_importance = State()
-
-'''
-@router.message(Command("assistant_menu"))
-async def show_assistant_menu(message: Message, user_repo: UserRepo):
-    user = await user_repo.get_user_with_group_info(message.from_user.id)
-    if user and user.group_membership and user.group_membership.is_assistant:
-        await message.answer("Меню ассистента группы. Вы можете управлять событиями и просматривать календарь.")
-    else:
-        await message.answer("У вас нет прав ассистента.")
-'''
 
 @router.message(F.text == "➕ Создать событие")
 async def start_create_event(message: Message, state: FSMContext, user_repo: UserRepo):
@@ -162,7 +152,7 @@ async def process_event_subject(message: Message, state: FSMContext, group_repo:
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.callback_query(F.data.in_(["importance_yes", "importance_no"]))
-async def process_event_importance(callback: CallbackQuery, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo):
+async def process_event_importance(callback: CallbackQuery, state: FSMContext, group_repo: GroupRepo, user_repo: UserRepo, bot: Bot):
     try:
         is_important = callback.data == "importance_yes"
         data = await state.get_data()
@@ -171,28 +161,59 @@ async def process_event_importance(callback: CallbackQuery, state: FSMContext, g
         description = data.get("description")
         subject = data.get("subject")
         user = await user_repo.get_user_with_group_info(callback.from_user.id)
-        if user and user.group_membership:
-            await group_repo.create_event(
-                group_id=user.group_membership.group.id,
-                created_by_user_id=user.telegram_id,
-                title=event_name,
-                description=description,
-                subject=subject,
-                date=event_date,
-                is_important=is_important
-            )
-            await state.clear()
-            await callback.message.delete()
-            await callback.message.answer(f"Событие «{event_name}» на {event_date.strftime('%Y-%m-%d')} создано! {'[Важное]' if is_important else ''}")
-        else:
+        if not user or not user.group_membership:
             await callback.message.answer("Ошибка: вы не состоите в группе.")
+            await state.clear()
+            await callback.answer()
+            return
+
+        group_id = user.group_membership.group.id
+        event = await group_repo.create_event(
+            group_id=group_id,
+            created_by_user_id=user.telegram_id,
+            title=event_name,
+            description=description,
+            subject=subject,
+            date=event_date,
+            is_important=is_important
+        )
+
+        # Получаем группу и участников, кроме создателя
+        group = await group_repo.get_group_by_id(group_id)
+        members = await group_repo.get_group_members_except_user(group_id, user.telegram_id)
+        
+        # Формируем уведомление
+        notification = f"Новое событие в группе «{group.name}»:\n"
+        notification += f"📅 Название: {event.title}\n"
+        if event.description:
+            notification += f"📝 Описание: {event.description}\n"
+        if event.subject:
+            notification += f"📚 Предмет: {event.subject}\n"
+        notification += f"🗓 Дата: {event.date}\n"
+        notification += f"{'❗ Важное' if event.is_important else '📌 Обычное'}"
+
+        # Отправляем уведомления всем участникам, кроме создателя
+        for member in members:
+            try:
+                await bot.send_message(
+                    chat_id=member.user_id,
+                    text=notification
+                )
+                logger.info(f"Уведомление о событии отправлено пользователю user_id={member.user_id}")
+            except Exception as e:
+                logger.error(f"Ошибка при отправке уведомления пользователю user_id={member.user_id}: {e}")
+
+        await state.clear()
+        await callback.message.delete()
+        await callback.message.answer(
+            f"Событие «{event_name}» на {event_date.strftime('%Y-%m-%d')} создано! {'[Важное]' if is_important else ''}"
+        )
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в process_event_importance: {e}")
         await state.clear()
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
-
 
 @router.message(F.text == "🚪 Выйти из группы")
 async def leave_group(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
@@ -219,5 +240,3 @@ async def leave_group(message: Message, state: FSMContext, user_repo: UserRepo, 
     except Exception as e:
         logger.error(f"Ошибка в leave_group: {e}")
         await message.answer("Произошла ошибка при выходе из группы. Попробуйте позже.")
-
-
