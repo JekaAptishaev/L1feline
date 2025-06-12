@@ -279,6 +279,7 @@ class GroupRepo:
     async def create_invite(self, group_id: str, invited_by_user_id: int) -> str:
         try:
             invite_token = str(uuid.uuid4())
+            
             invite = Invite(
                 group_id=group_id,
                 invited_by_user_id=invited_by_user_id,
@@ -314,3 +315,62 @@ class GroupRepo:
         else:
             logger.info("Группа не найдена или ключ недействителен")
         return group
+    
+    async def leave_group(self, group_id: str, user_id: int) -> bool:
+        """Удаляет участника из группы, если он не лидер."""
+        try:
+            stmt = (
+                select(GroupMember)
+                .where(
+                    GroupMember.group_id == group_id,
+                    GroupMember.user_id == user_id,
+                    GroupMember.is_leader == False
+                )
+            )
+            result = await self.session.execute(stmt)
+            member = result.scalar_one_or_none()
+            if not member:
+                logger.info(f"Участник user_id={user_id} не найден в группе group_id={group_id} или является лидером")
+                return False
+
+            await self.session.delete(member)
+            await self.session.commit()
+            logger.info(f"Участник user_id={user_id} успешно покинул группу group_id={group_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка при выходе из группы: {e}")
+            await self.session.rollback()
+            return False
+
+    async def delete_group(self, group_id: str, leader_id: int) -> bool:
+        """Удаляет группу, если пользователь является лидером."""
+        try:
+            stmt = (
+                select(GroupMember)
+                .where(
+                    GroupMember.group_id == group_id,
+                    GroupMember.user_id == leader_id,
+                    GroupMember.is_leader == True
+                )
+            )
+            result = await self.session.execute(stmt)
+            leader = result.scalar_one_or_none()
+            if not leader:
+                logger.info(f"Пользователь user_id={leader_id} не является лидером группы group_id={group_id}")
+                return False
+
+            stmt = select(Group).where(Group.id == group_id)
+            result = await self.session.execute(stmt)
+            group = result.scalar_one_or_none()
+            if not group:
+                logger.info(f"Группа group_id={group_id} не найдена")
+                return False
+
+            await self.session.delete(group)
+            await self.session.commit()
+            logger.info(f"Группа group_id={group_id} успешно удалена лидером user_id={leader_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка при удалении группы: {e}")
+            await self.session.rollback()
+            return False
