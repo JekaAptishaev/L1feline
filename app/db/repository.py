@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete
 from app.db.models import User, Group, GroupMember, Event, Invite
 from datetime import datetime, timedelta
 import uuid
@@ -126,6 +127,32 @@ class GroupRepo:
             raise
         except Exception as e:
             logger.error(f"Ошибка при добавлении участника: {e}")
+            await self.session.rollback()
+            raise
+
+    async def delete_member(self, group_id: str, user_id: int):
+        """Удаляет участника из группы."""
+        try:
+            stmt = (
+                select(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+            )
+            result = await self.session.execute(stmt)
+            member = result.scalar_one_or_none()
+            if not member:
+                raise ValueError(f"Участник с user_id={user_id} не найден в группе group_id={group_id}")
+
+            await self.session.execute(
+                delete(GroupMember)
+                .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+            )
+            await self.session.commit()
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при удалении участника: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при удалении участника: {e}")
             await self.session.rollback()
             raise
 
