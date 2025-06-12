@@ -30,14 +30,14 @@ class UserRepo:
                 user = User(
                     telegram_id=telegram_id,
                     telegram_username=username,
-                    first_name=first_name,
-                    last_name=last_name
+                    first_name=first_name or "Неизвестно",
+                    last_name=last_name,
+                    middle_name=None
                 )
                 self.session.add(user)
                 await self.session.commit()
                 logger.info("Пользователь добавлен в сессию и коммит выполнен")
                 await self.session.refresh(user)
-                # Повторно загружаем пользователя с отношением
                 stmt = (
                     select(User)
                     .options(selectinload(User.group_membership).selectinload(GroupMember.group))
@@ -49,7 +49,7 @@ class UserRepo:
             return user
         except Exception as e:
             logger.error(f"Ошибка при получении/создании пользователя: {e}", exc_info=True)
-        raise
+            raise
 
     async def get_user_with_group_info(self, telegram_id: int) -> User | None:
         """Получает пользователя и информацию о его группе одним запросом."""
@@ -66,6 +66,50 @@ class UserRepo:
         except Exception as e:
             logger.error(f"Ошибка при получении пользователя с группой: {e}")
             return None
+
+    async def update_user(self, telegram_id: int, first_name: str, last_name: str, middle_name: str | None, username: str) -> User:
+        """Обновляет данные пользователя."""
+        try:
+            stmt = (
+                update(User)
+                .where(User.telegram_id == telegram_id)
+                .values(
+                    first_name=first_name,
+                    last_name=last_name,
+                    middle_name=middle_name,
+                    telegram_username=username
+                )
+                .returning(User)
+            )
+            result = await self.session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                raise ValueError(f"Пользователь с telegram_id={telegram_id} не найден")
+            await self.session.commit()
+            logger.info(f"Пользователь {telegram_id} обновлён: {first_name} {last_name} {middle_name or ''}")
+            return user
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении пользователя: {e}")
+            await self.session.rollback()
+            raise
+
+    async def check_full_name_exists(self, last_name: str, first_name: str, middle_name: str | None) -> bool:
+        """Проверяет, существует ли пользователь с указанным ФИО."""
+        try:
+            stmt = select(User).where(
+                User.last_name == last_name,
+                User.first_name == first_name
+            )
+            if middle_name:
+                stmt = stmt.where(User.middle_name == middle_name)
+            else:
+                stmt = stmt.where(User.middle_name.is_(None))
+            result = await self.session.execute(stmt)
+            user = result.scalar_one_or_none()
+            return user is not None
+        except Exception as e:
+            logger.error(f"Ошибка при проверке уникальности ФИО: {e}")
+            raise
 
 class GroupRepo:
     def __init__(self, session: AsyncSession):
@@ -227,7 +271,7 @@ class GroupRepo:
         title: str,
         description: str = None,
         subject: str = None,
-        date: datetime.date = None,  # Изменён тип на datetime.date
+        date: datetime.date = None,
         is_important: bool = False
     ) -> Event:
         """Создаёт новое событие с полным набором полей."""
@@ -284,7 +328,7 @@ class GroupRepo:
                 group_id=group_id,
                 invited_by_user_id=invited_by_user_id,
                 invite_token=invite_token,
-                expires_at=datetime(2100, 1, 1).date()  # Устанавливаем далёкую дату
+                expires_at=datetime(2100, 1, 1).date()
             )
             self.session.add(invite)
             await self.session.commit()

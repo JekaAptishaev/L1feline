@@ -6,7 +6,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from app.db.repository import UserRepo, GroupRepo
-from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader,  get_regular_member_menu, get_assistant_menu 
+from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader, get_regular_member_menu, get_assistant_menu
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -16,6 +16,11 @@ class CreateGroup(StatesGroup):
 
 class JoinGroup(StatesGroup):
     waiting_for_invite_token = State()
+
+class RegisterUser(StatesGroup):
+    waiting_for_last_name = State()
+    waiting_for_first_name = State()
+    waiting_for_middle_name = State()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
@@ -28,6 +33,12 @@ async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
             last_name=message.from_user.last_name
         )
         await state.clear()
+
+        # Проверяем, заполнены ли ФИО
+        if not user.first_name or not user.last_name:
+            await state.set_state(RegisterUser.waiting_for_last_name)
+            await message.answer("Пожалуйста, введите вашу фамилию:")
+            return
 
         if user.group_membership:
             group_member = user.group_membership
@@ -54,7 +65,84 @@ async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка в cmd_start: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
-        
+
+@router.message(RegisterUser.waiting_for_last_name)
+async def process_last_name(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        last_name = message.text.strip()
+        if len(last_name) < 2 or len(last_name) > 50:
+            await message.answer("Фамилия должна быть от 2 до 50 символов. Попробуйте снова.")
+            return
+
+        await state.update_data(last_name=last_name)
+        await state.set_state(RegisterUser.waiting_for_first_name)
+        await message.answer("Введите ваше имя:")
+    except Exception as e:
+        logger.error(f"Ошибка в process_last_name: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(RegisterUser.waiting_for_first_name)
+async def process_first_name(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        first_name = message.text.strip()
+        if len(first_name) < 2 or len(first_name) > 50:
+            await message.answer("Имя должно быть от 2 до 50 символов. Попробуйте снова.")
+            return
+
+        await state.update_data(first_name=first_name)
+        await state.set_state(RegisterUser.waiting_for_middle_name)
+        await message.answer("Введите ваше отчество (или отправьте 'Пропустить', если его нет):")
+    except Exception as e:
+        logger.error(f"Ошибка в process_first_name: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(RegisterUser.waiting_for_middle_name)
+async def process_middle_name(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        middle_name = message.text.strip() if message.text.strip().lower() != "пропустить" else None
+        if middle_name and (len(middle_name) < 2 or len(middle_name) > 50):
+            await message.answer("Отчество должно быть от 2 до 50 символов или 'Пропустить'. Попробуйте снова.")
+            return
+
+        data = await state.get_data()
+        last_name = data.get("last_name")
+        first_name = data.get("first_name")
+
+        # Проверяем уникальность ФИО
+        full_name_exists = await user_repo.check_full_name_exists(
+            last_name=last_name,
+            first_name=first_name,
+            middle_name=middle_name
+        )
+        if full_name_exists:
+            await message.answer(
+                f"Пользователь с ФИО {last_name} {first_name} {middle_name or ''} уже существует. "
+                "Пожалуйста, введите другую фамилию."
+            )
+            await state.set_state(RegisterUser.waiting_for_last_name)
+            return
+
+        # Обновляем данные пользователя в базе
+        await user_repo.update_user(
+            telegram_id=message.from_user.id,
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=middle_name,
+            username=message.from_user.username or ""
+        )
+
+        await state.clear()
+        await message.answer(
+            f"Регистрация завершена! Добро пожаловать, {first_name}! Вы пока не состоите в группе.",
+            reply_markup=get_main_menu_unregistered()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в process_middle_name: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
 @router.message(F.text == "🚀 Создать группу")
 async def start_create_group(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
@@ -69,7 +157,7 @@ async def start_create_group(message: Message, state: FSMContext, user_repo: Use
     except Exception as e:
         logger.error(f"Ошибка в start_create_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
-        
+
 @router.message(CreateGroup.waiting_for_name)
 async def process_group_name(message: Message, state: FSMContext, group_repo: GroupRepo):
     logger.info(f"Получено сообщение для CreateGroup.waiting_for_name: {message.text}")
@@ -94,7 +182,7 @@ async def process_group_name(message: Message, state: FSMContext, group_repo: Gr
         await state.clear()
         await message.answer("Произошла ошибка при создании группы. Попробуйте позже.")
 
-@router.message(F.text == "🔗 Присоединиться по ключу") 
+@router.message(F.text == "🔗 Присоединиться по ключу")
 async def start_join_group(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
@@ -127,8 +215,8 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
             user = await user_repo.get_or_create_user(
                 telegram_id=message.from_user.id,
                 username=message.from_user.username,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name
+                first_name=message.from_user.first_name or "Неизвестно",
+                last_name=message.from_user.last_name or None
             )
 
         await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
@@ -139,4 +227,3 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
         logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()
         await message.answer("Произошла ошибка при присоединении. Попробуйте позже.")
-

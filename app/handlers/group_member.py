@@ -35,7 +35,6 @@ async def leave_group(message: Message, state: FSMContext, user_repo: UserRepo, 
         logger.error(f"Ошибка в leave_group: {e}")
         await message.answer("Произошла ошибка при выходе из группы. Попробуйте позже.")
 
-
 @router.message(F.text == "📅 События")
 async def handle_events_and_booking(message: Message, group_repo: GroupRepo, user_repo: UserRepo):
     try:
@@ -61,7 +60,7 @@ async def show_calendar_member(message: Message, state: FSMContext, user_repo: U
     """Перенаправление на месячный календарь для обычных участников."""
     try:
         from app.handlers import calendar
-        await calendar.show_calendar(message, user_repo, group_repo, state)  # Добавлен state
+        await calendar.show_calendar(message, user_repo, group_repo, state)
     except Exception as e:
         logger.error(f"Ошибка в show_calendar_member: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
@@ -92,13 +91,13 @@ async def handle_group_members_leader(message: Message, user_repo: UserRepo, gro
             await message.answer("В группе пока нет участников.")
             return
 
-        # Формируем список участников
         member_list = []
         for member in members:
             member_user = await user_repo.get_user_with_group_info(member.user_id)
             if member_user:
                 role = "Староста" if member.is_leader else "Ассистент" if member.is_assistant else "Участник"
-                member_info = f"{member_user.first_name} {member_user.last_name or ''} (@{member_user.telegram_username or 'без имени'}) - {role}"
+                full_name = f"{member_user.last_name or ''} {member_user.first_name} {member_user.middle_name or ''}".strip()
+                member_info = f"{full_name} (@{member_user.telegram_username or 'без имени'}) - {role}"
                 member_list.append(member_info)
 
         response = f"Участники группы «{group.name}»:\n" + "\n".join(member_list)
