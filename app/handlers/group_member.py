@@ -4,26 +4,37 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from app.db.repository import UserRepo, GroupRepo
-from app.keyboards.reply import get_regular_member_menu
+from app.keyboards.reply import get_regular_member_menu, get_main_menu_unregistered
 
 router = Router()
 logger = logging.getLogger(__name__)
 
-'''
-@router.message(Command("member_info"))
-@router.message(F.text == "ℹ️ Информация о группе")
-async def show_member_info(message: Message, user_repo: UserRepo):
-    """Обработчик для отображения информации о группе."""
+@router.message(F.text == "🚪 Выйти из группы")
+async def leave_group(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if user and user.group_membership:
-            await message.answer(f"Вы участник группы «{user.group_membership.group.name}».")
-        else:
+        if not user or not user.group_membership:
             await message.answer("Вы не состоите в группе.")
+            return
+
+        if user.group_membership.is_leader:
+            await message.answer("Вы являетесь старостой группы. Чтобы удалить группу, используйте кнопку «Удалить группу».")
+            return
+
+        group = user.group_membership.group
+        success = await group_repo.leave_group(group_id=str(group.id), user_id=user.telegram_id)
+        if success:
+            await state.clear()
+            await message.answer(
+                f"Вы успешно покинули группу «{group.name}».",
+                reply_markup=get_main_menu_unregistered()
+            )
+        else:
+            await message.answer("Не удалось покинуть группу. Возможно, вы лидер группы.")
     except Exception as e:
-        logger.error(f"Ошибка в show_member_info: {e}")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
-'''
+        logger.error(f"Ошибка в leave_group: {e}")
+        await message.answer("Произошла ошибка при выходе из группы. Попробуйте позже.")
+
 
 @router.message(F.text == "📅 События")
 async def handle_events_and_booking(message: Message, group_repo: GroupRepo, user_repo: UserRepo):

@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import UserRepo, GroupRepo
 from datetime import datetime
+from app.keyboards.reply import get_main_menu_unregistered 
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -191,3 +192,32 @@ async def process_event_importance(callback: CallbackQuery, state: FSMContext, g
         await state.clear()
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
+
+
+@router.message(F.text == "🚪 Выйти из группы")
+async def leave_group(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    try:
+        user = await user_repo.get_user_with_group_info(message.from_user.id)
+        if not user or not user.group_membership:
+            await message.answer("Вы не состоите в группе.")
+            return
+
+        if user.group_membership.is_leader:
+            await message.answer("Вы являетесь старостой группы. Чтобы удалить группу, используйте кнопку «Удалить группу».")
+            return
+
+        group = user.group_membership.group
+        success = await group_repo.leave_group(group_id=str(group.id), user_id=user.telegram_id)
+        if success:
+            await state.clear()
+            await message.answer(
+                f"Вы успешно покинули группу «{group.name}».",
+                reply_markup=get_main_menu_unregistered()
+            )
+        else:
+            await message.answer("Не удалось покинуть группу. Возможно, вы лидер группы.")
+    except Exception as e:
+        logger.error(f"Ошибка в leave_group: {e}")
+        await message.answer("Произошла ошибка при выходе из группы. Попробуйте позже.")
+
+
