@@ -183,16 +183,20 @@ async def process_unban_member(message: Message, state: FSMContext, user_repo: U
             await message.answer("Пожалуйста, введите корректный номер пользователя (число).")
             return
 
+
+
         banned_user = banned_users[ban_number - 1]
+        group = await group_repo.get_group_by_id(group_id)
+        invite_token = await group_repo.create_invite(group_id=group_id, invited_by_user_id=message.from_user.id)
         await group_repo.unban_user(group_id=group_id, user_id=banned_user["user_id"])
         full_name = f"{banned_user['last_name'] or ''} {banned_user['first_name']} {banned_user['middle_name'] or ''}".strip()
         await bot.send_message(
             banned_user["user_id"],
-            "Вы были разблокированы и теперь можете присоединиться к группе снова."
+            f"Вы были разблокированы в группе «{group.name}» и теперь можете снова присоединиться"
         )
         await state.clear()
         await message.answer(
-            f"Пользователь {full_name} разблокирован.",
+            f"Пользователь {full_name} разблокирован и уведомлён о возможности повторного присоединения.",
             reply_markup=get_main_menu_leader()
         )
     except Exception as e:
@@ -324,26 +328,52 @@ async def start_create_invite(message: Message, state: FSMContext, user_repo: Us
         await message.answer("Произошла ошибка при создании ключа доступа. Попробуйте позже.")
 
 @router.message(F.text == "🗑 Удалить группу")
-async def delete_group(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+async def delete_group(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo, bot: Bot):
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
-        if not user or not user.group_membership or not user.group_membership.is_leader:
-            await message.answer("У вас нет прав для удаления группы.")
+        if not user or not user.group_membership:
+            logger.warning(f"Попытка удаления группы без членства: user_id={message.from_user.id}")
+            await message.answer("Вы не состоите в группе.")
+            return
+        if not user.group_membership.is_leader:
+            logger.warning(f"Попытка удаления группы без прав лидера: user_id={message.from_user.id}")
+            await message.answer("У вас нет прав для удаления группы. Только староста может удалить группу.")
             return
 
         group = user.group_membership.group
-        success = await group_repo.delete_group(group_id=str(group.id), leader_id=user.telegram_id)
+        group_id = str(group.id)  # Сохраняем group_id заранее
+        group_name = group.name   # Сохраняем имя группы для уведомлений
+        logger.info(f"Попытка удаления группы group_id={group_id} пользователем user_id={user.telegram_id}")
+
+        # Уведомляем всех участников группы об удалении
+        members = await group_repo.get_group_members(group_id)
+        for member in members:
+            if member.user_id != user.telegram_id:  # Не отправляем уведомление самому лидеру
+                try:
+                    await bot.send_message(
+                        member.user_id,
+                        f"Группа «{group_name}» была удалена старостой.",
+                        reply_markup=get_main_menu_unregistered()
+                    )
+                    logger.info(f"Уведомление об удалении группы отправлено пользователю user_id={member.user_id}")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке уведомления пользователю user_id={member.user_id}: {e}")
+
+        success = await group_repo.delete_group(group_id=group_id, leader_id=user.telegram_id)
         if success:
             await state.clear()
+            logger.info(f"Группа group_id={group_id} успешно удалена")
             await message.answer(
-                f"Группа «{group.name}» успешно удалена.",
+                f"Группа «{group_name}» успешно удалена. Все участники уведомлены.",
                 reply_markup=get_main_menu_unregistered()
             )
         else:
-            await message.answer("Не удалось удалить группу. Убедитесь, что вы лидер группы.")
+            logger.error(f"Не удалось удалить группу group_id={group_id}: пользователь не является лидером или группа не найдена")
+            await message.answer("Не удалось удалить группу. Убедитесь, что вы староста группы, или попробуйте позже.")
     except Exception as e:
-        logger.error(f"Ошибка в delete_group: {e}")
-        await message.answer("Произошла ошибка при удалении группы. Попробуйте позже.")
+        logger.error(f"Ошибка при удалении группы group_id={group_id}: {e}", exc_info=True)
+        await message.answer("Произошла ошибка при удалении группы. Пожалуйста, попробуйте позже.")
+
 
 @router.callback_query(F.data == "delete_member")
 async def start_delete_member(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):

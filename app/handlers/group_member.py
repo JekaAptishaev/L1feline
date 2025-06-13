@@ -65,17 +65,6 @@ async def show_calendar_member(message: Message, state: FSMContext, user_repo: U
         logger.error(f"Ошибка в show_calendar_member: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
-@router.message(Command("weekly_calendar"))
-@router.message(F.text == "📅 Показать недельный календарь")
-async def show_weekly_calendar_member(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
-    """Перенаправление на недельный календарь для обычных участников."""
-    try:
-        from app.handlers.weekly_calendar import show_weekly_calendar
-        await show_weekly_calendar(message, user_repo, group_repo)
-    except Exception as e:
-        logger.error(f"Ошибка в show_weekly_calendar_member: {e}")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
-
 @router.message(F.text == "👥 Участники группы")
 async def handle_group_members_leader(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
     """Обработчик: отображение списка участников группы с ролями."""
