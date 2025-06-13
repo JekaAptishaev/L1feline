@@ -237,10 +237,11 @@ class GroupRepo:
         """Удаляет пользователя из бан-листа группы."""
         try:
             await self.session.execute(
-                delete("banned_users").where(
-                    "banned_users.group_id = :group_id AND banned_users.user_id = :user_id",
-                    {"group_id": group_id, "user_id": user_id}
-                )
+                text(
+                    "DELETE FROM banned_users "
+                    "WHERE group_id = :group_id AND user_id = :user_id"
+                ),
+                {"group_id": group_id, "user_id": user_id}
             )
             await self.session.commit()
             logger.info(f"Пользователь user_id={user_id} удалён из бан-листа группы group_id={group_id}")
@@ -252,12 +253,13 @@ class GroupRepo:
     async def get_banned_users(self, group_id: str):
         """Возвращает список заблокированных пользователей в группе."""
         try:
-            stmt = (
-                select("banned_users.user_id", User.first_name, User.last_name, User.middle_name, User.telegram_username, "banned_users.banned_at")
-                .join(User, "banned_users.user_id" == User.telegram_id)
-                .where("banned_users.group_id" == group_id)
+            stmt = text(
+                "SELECT banned_users.user_id, users.first_name, users.last_name, users.middle_name, users.telegram_username, banned_users.banned_at "
+                "FROM banned_users "
+                "JOIN users ON banned_users.user_id = users.telegram_id "
+                "WHERE banned_users.group_id = :group_id"
             )
-            result = await self.session.execute(stmt)
+            result = await self.session.execute(stmt, {"group_id": group_id})
             banned_users = result.fetchall()
             return [
                 {
@@ -277,14 +279,14 @@ class GroupRepo:
     async def is_user_banned(self, group_id: str, user_id: int) -> bool:
         """Проверяет, находится ли пользователь в бан-листе группы."""
         try:
-            stmt = (
-                select("banned_users")
-                .where(
-                    "banned_users.group_id" == group_id,
-                    "banned_users.user_id" == user_id
-                )
+            stmt = text(
+                "SELECT 1 FROM banned_users "
+                "WHERE group_id = :group_id AND user_id = :user_id"
             )
-            result = await self.session.execute(stmt)
+            result = await self.session.execute(
+                stmt,
+                {"group_id": group_id, "user_id": user_id}
+            )
             return result.scalar_one_or_none() is not None
         except Exception as e:
             logger.error(f"Ошибка при проверке бан-листа: {e}")
