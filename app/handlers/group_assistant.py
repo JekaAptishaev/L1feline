@@ -34,7 +34,7 @@ def get_create_event_keyboard(data: dict) -> InlineKeyboardBuilder:
     keyboard.button(text=description_text, callback_data="edit_description")
     keyboard.button(text="Дата", callback_data="edit_date")
     # Третий ряд: Важность, Дополнительно
-    importance_text = "Важность" if not data.get("is_important") else "Важность (да)"
+    importance_text = f"Важное: {'Да' if data.get('is_important') else 'Нет'}"
     keyboard.button(text=importance_text, callback_data="edit_importance")
     keyboard.button(text="Дополнительно", callback_data="edit_additional")
     # Четвертый ряд: Отмена, Готово
@@ -49,6 +49,15 @@ def get_back_keyboard() -> InlineKeyboardBuilder:
     keyboard.button(text="Назад", callback_data="back_to_menu")
     return keyboard
 
+def get_importance_keyboard() -> InlineKeyboardBuilder:
+    """Генерирует клавиатуру для выбора важности события."""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="Да", callback_data="set_importance_true")
+    keyboard.button(text="Нет", callback_data="set_importance_false")
+    keyboard.button(text="Отмена", callback_data="back_to_menu")
+    keyboard.adjust(2, 1)
+    return keyboard
+
 @router.message(F.text == "➕ Создать событие")
 async def start_create_event(message: Message, state: FSMContext, user_repo: UserRepo):
     """Запускает процесс создания события."""
@@ -60,6 +69,7 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
             return
 
         await state.set_state(CreateEvent.main_menu)
+        await state.update_data(is_important=False)  # Устанавливаем значение по умолчанию
         keyboard = get_create_event_keyboard({})
         await message.answer("Создание события", reply_markup=keyboard.as_markup())
     except Exception as e:
@@ -235,12 +245,36 @@ async def edit_date(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "edit_importance")
 async def edit_importance(callback: CallbackQuery, state: FSMContext):
-    """Заглушка для редактирования важности."""
+    """Обрабатывает запрос на редактирование важности."""
     try:
-        await callback.message.edit_text("Функция редактирования важности пока не реализована.", reply_markup=get_back_keyboard().as_markup())
+        await state.set_state(CreateEvent.waiting_for_importance)
+        msg = await callback.message.edit_text(
+            "Важно ли это событие?",
+            reply_markup=get_importance_keyboard().as_markup()
+        )
+        await state.update_data(last_message_id=msg.message_id)
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в edit_importance: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data.in_(["set_importance_true", "set_importance_false"]))
+async def process_importance(callback: CallbackQuery, state: FSMContext):
+    """Обрабатывает выбор важности события."""
+    try:
+        is_important = callback.data == "set_importance_true"
+        data = await state.get_data()
+        data["is_important"] = is_important
+        await state.update_data(data)
+        await state.set_state(CreateEvent.main_menu)
+        keyboard = get_create_event_keyboard(data)
+        await callback.message.edit_text("Создание события", reply_markup=keyboard.as_markup())
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в process_importance: {e}")
+        await state.clear()
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
 
