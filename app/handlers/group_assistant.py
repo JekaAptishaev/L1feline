@@ -94,7 +94,8 @@ async def edit_subject(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         subject = data.get("subject", "Пусто")
         await state.set_state(CreateEvent.waiting_for_subject)
-        await callback.message.edit_text(f"Предмет: {subject}", reply_markup=get_back_keyboard().as_markup())
+        msg = await callback.message.edit_text(f"Предмет: {subject}", reply_markup=get_back_keyboard().as_markup())
+        await state.update_data(last_message_id=msg.message_id)
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в edit_subject: {e}")
@@ -113,6 +114,9 @@ async def process_subject(message: Message, state: FSMContext):
 
         data = await state.get_data()
         data["subject"] = subject
+        last_message_id = data.get("last_message_id")
+        if last_message_id:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_message_id)
         await state.update_data(data)
         await state.set_state(CreateEvent.main_menu)
         keyboard = get_create_event_keyboard(data)
@@ -130,7 +134,8 @@ async def edit_title(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         title = data.get("title", "Пусто")
         await state.set_state(CreateEvent.waiting_for_title)
-        await callback.message.edit_text(f"Название: {title}", reply_markup=get_back_keyboard().as_markup())
+        msg = await callback.message.edit_text(f"Название: {title}", reply_markup=get_back_keyboard().as_markup())
+        await state.update_data(last_message_id=msg.message_id)
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в edit_title: {e}")
@@ -149,6 +154,9 @@ async def process_title(message: Message, state: FSMContext):
 
         data = await state.get_data()
         data["title"] = title
+        last_message_id = data.get("last_message_id")
+        if last_message_id:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_message_id)
         await state.update_data(data)
         await state.set_state(CreateEvent.main_menu)
         keyboard = get_create_event_keyboard(data)
@@ -166,7 +174,8 @@ async def edit_description(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         description = data.get("description", "Пусто")
         await state.set_state(CreateEvent.waiting_for_description)
-        await callback.message.edit_text(f"Описание: {description}", reply_markup=get_back_keyboard().as_markup())
+        msg = await callback.message.edit_text(f"Описание: {description}", reply_markup=get_back_keyboard().as_markup())
+        await state.update_data(last_message_id=msg.message_id)
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в edit_description: {e}")
@@ -185,6 +194,9 @@ async def process_description(message: Message, state: FSMContext):
 
         data = await state.get_data()
         data["description"] = description
+        last_message_id = data.get("last_message_id")
+        if last_message_id:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_message_id)
         await state.update_data(data)
         await state.set_state(CreateEvent.main_menu)
         keyboard = get_create_event_keyboard(data)
