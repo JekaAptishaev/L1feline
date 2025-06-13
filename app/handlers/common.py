@@ -30,13 +30,13 @@ async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
         user = await user_repo.get_or_create_user(
             telegram_id=message.from_user.id,
             username=message.from_user.username or "",
-            first_name=message.from_user.first_name or "",
-            last_name=message.from_user.last_name
+            first_name= None,
+            last_name= None
         )
         await state.clear()
 
         # Проверяем, заполнены ли ФИО
-        if not user.first_name or not user.last_name:
+        if user.group_membership is None and (user.first_name == "Неизвестно" or user.last_name is None):
             await state.set_state(RegisterUser.waiting_for_last_name)
             await message.answer("Пожалуйста, введите вашу фамилию:")
             return

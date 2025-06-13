@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from app.db.repository import UserRepo, GroupRepo
-from app.keyboards.reply import get_regular_member_menu, get_main_menu_unregistered
+from app.keyboards.reply import get_main_menu_unregistered
 
 router = Router()
 logger = logging.getLogger(__name__)
