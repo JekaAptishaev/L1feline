@@ -20,6 +20,7 @@ class CreateEvent(StatesGroup):
     waiting_for_date = State()
     waiting_for_importance = State()
     waiting_for_topics_and_queues = State()
+    waiting_for_queue_slots = State()
 
 # Словарь для перевода месяцев на русский
 MONTHS_RU = {
@@ -64,8 +65,10 @@ def get_create_event_keyboard(data: dict) -> InlineKeyboardBuilder:
     keyboard.button(text=date_text, callback_data="edit_date")
     # Третий ряд: Важность, Темы и очереди
     importance_text = f"Важное: {'Да' if data.get('is_important') else 'Нет'}"
+    queue_slots = data.get("queue_slots")
+    queue_text = f"Очередь: {queue_slots} мест" if queue_slots else "Темы и очереди"
     keyboard.button(text=importance_text, callback_data="edit_importance")
-    keyboard.button(text="Темы и очереди", callback_data="edit_topics_and_queues")
+    keyboard.button(text=queue_text, callback_data="edit_topics_and_queues")
     # Четвертый ряд: Отмена, Готово
     keyboard.button(text="Отмена", callback_data="cancel_event_creation")
     keyboard.button(text="Готово", callback_data="finish_event_creation")
@@ -449,17 +452,49 @@ async def add_topics(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "add_queue")
 async def add_queue(callback: CallbackQuery, state: FSMContext):
-    """Заглушка для добавления очереди."""
+    """Обрабатывает запрос на создание очереди."""
     try:
-        await callback.message.edit_text(
-            "Функция добавления очереди пока не реализована.",
+        await state.set_state(CreateEvent.waiting_for_queue_slots)
+        msg = await callback.message.edit_text(
+            "Введите количество мест в очереди (число):",
             reply_markup=get_back_keyboard().as_markup()
         )
+        await state.update_data(last_message_id=msg.message_id)
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в add_queue: {e}")
+        await state.clear()
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
+
+@router.message(CreateEvent.waiting_for_queue_slots)
+async def process_queue_slots(message: Message, state: FSMContext):
+    """Сохраняет количество мест в очереди и обновляет меню."""
+    try:
+        slots = message.text.strip()
+        try:
+            max_slots = int(slots)
+            if max_slots < 1:
+                await message.answer("Количество мест должно быть больше 0.")
+                return
+        except ValueError:
+            await message.answer("Пожалуйста, введите корректное число.")
+            return
+
+        data = await state.get_data()
+        data["queue_slots"] = max_slots
+        last_message_id = data.get("last_message_id")
+        if last_message_id:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_message_id)
+        await state.update_data(data)
+        await state.set_state(CreateEvent.main_menu)
+        keyboard = get_create_event_keyboard(data)
+        await message.delete()
+        await message.answer("Создание события", reply_markup=keyboard.as_markup())
+    except Exception as e:
+        logger.error(f"Ошибка в process_queue_slots: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.callback_query(F.data == "finish_event_creation")
 async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
@@ -504,6 +539,7 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
         subject = data.get("subject")
         description = data.get("description")
         is_important = data.get("is_important", False)
+        queue_slots = data.get("queue_slots")
 
         # Создание события
         event = await group_repo.create_event(
@@ -516,13 +552,17 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
             is_important=is_important
         )
 
+        if event and queue_slots:
+            # Создаём очередь для события
+            await user_repo.create_queue(event_id=str(event.id), max_slots=queue_slots)
+
         if event:
             # Успешное создание
             reply_markup = get_main_menu_leader() if user.group_membership.is_leader else get_assistant_menu()
             await state.clear()
             await callback.message.delete()
             await callback.message.answer(
-                f"Событие «{title}» успешно создано!",
+                f"Событие «{title}» успешно создано!" + (f" Очередь на {queue_slots} мест создана." if queue_slots else ""),
                 reply_markup=reply_markup
             )
             logger.info(f"Событие создано: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
