@@ -3,7 +3,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete, update, text
-from app.db.models import User, Group, GroupMember, Event, Invite
+from app.db.models import User, Group, GroupMember, Event, Invite, TopicList, Topic
 from datetime import datetime, timedelta
 import uuid
 import logging
@@ -601,6 +601,22 @@ class GroupRepo:
         stmt = select(Event).where(Event.id == event_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def create_topic_list(self, topic_list: TopicList):
+        try:
+            self.session.add(topic_list)
+            for topic in topic_list.topics:
+                self.session.add(topic)
+            await self.session.commit()
+            logger.info(f"Список тем создан: id={topic_list.id}, event_id={topic_list.event_id}")
+        except IntegrityError as e:
+            logger.error(f"Ошибка целостности при создании списка тем: {e}")
+            await self.session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при создании списка тем: {e}")
+            await self.session.rollback()
+            raise
 
     async def create_invite(self, group_id: str, invited_by_user_id: int) -> str:
         try:

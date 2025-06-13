@@ -8,6 +8,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import UserRepo, GroupRepo
 from datetime import datetime, timedelta
 from app.keyboards.reply import get_assistant_menu, get_main_menu_leader, get_main_menu_unregistered
+from uuid import uuid4
+from app.db.models import TopicList, Topic
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -66,9 +68,11 @@ def get_create_event_keyboard(data: dict) -> InlineKeyboardBuilder:
     # Третий ряд: Важность, Темы и очереди
     importance_text = f"Важное: {'Да' if data.get('is_important') else 'Нет'}"
     queue_slots = data.get("queue_slots")
-    queue_text = f"Очередь: {queue_slots} мест" if queue_slots else "Темы и очереди"
+    topic_list_data = data.get("topic_list_data", {"topics": []})
+    topics_count = len(topic_list_data["topics"])
+    topics_button_text = f"{topics_count} Тем" if topics_count > 0 else "Темы и очереди"
     keyboard.button(text=importance_text, callback_data="edit_importance")
-    keyboard.button(text=queue_text, callback_data="edit_topics_and_queues")
+    keyboard.button(text=topics_button_text, callback_data="edit_topics_and_queues")
     # Четвертый ряд: Отмена, Готово
     keyboard.button(text="Отмена", callback_data="cancel_event_creation")
     keyboard.button(text="Готово", callback_data="finish_event_creation")
@@ -123,10 +127,11 @@ def get_date_selection_keyboard(current_date: str = None) -> InlineKeyboardBuild
     keyboard.adjust(2, 2, 2, 2)
     return keyboard
 
-def get_topics_and_queues_keyboard() -> InlineKeyboardBuilder:
+def get_topics_and_queues_keyboard(topics_count: int) -> InlineKeyboardBuilder:
     """Генерирует клавиатуру для меню 'Темы и очереди'."""
     keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="Добавить темы", callback_data="add_topics")
+    add_topics_text = "Редактировать темы" if topics_count > 0 else "Добавить темы"
+    keyboard.button(text=add_topics_text, callback_data="add_topics")
     keyboard.button(text="Добавить очередь", callback_data="add_queue")
     keyboard.button(text="Назад", callback_data="back_to_menu")
     keyboard.adjust(2, 1)
@@ -423,10 +428,14 @@ async def process_importance(callback: CallbackQuery, state: FSMContext):
 async def edit_topics_and_queues(callback: CallbackQuery, state: FSMContext):
     """Обрабатывает запрос на редактирование тем и очередей."""
     try:
+        data = await state.get_data()
+        topic_list_data = data.get("topic_list_data", {"topics": []})
+        topics_count = len(topic_list_data["topics"])
         await state.set_state(CreateEvent.waiting_for_topics_and_queues)
-        keyboard = get_topics_and_queues_keyboard()
+        keyboard = get_topics_and_queues_keyboard(topics_count)
+        warning_text = "\nНажатие на кнопку 'Добавить очередь' сотрёт все темы." if topics_count > 0 else ""
         await callback.message.edit_text(
-            "Темы и очереди",
+            f"{topics_count} Тем{warning_text}" if topics_count > 0 else "Темы и очереди",
             reply_markup=keyboard.as_markup()
         )
         await callback.answer()
@@ -436,24 +445,11 @@ async def edit_topics_and_queues(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
 
-@router.callback_query(F.data == "add_topics")
-async def add_topics(callback: CallbackQuery, state: FSMContext):
-    """Заглушка для добавления тем."""
-    try:
-        await callback.message.edit_text(
-            "Функция добавления тем пока не реализована.",
-            reply_markup=get_back_keyboard().as_markup()
-        )
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Ошибка в add_topics: {e}")
-        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
-        await callback.answer()
-
 @router.callback_query(F.data == "add_queue")
 async def add_queue(callback: CallbackQuery, state: FSMContext):
     """Обрабатывает запрос на создание очереди."""
     try:
+        await state.update_data(topic_list_data={"topics": []})  # Сбрасываем темы
         await state.set_state(CreateEvent.waiting_for_queue_slots)
         msg = await callback.message.edit_text(
             "Введите количество мест в очереди (число):",
@@ -540,6 +536,7 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
         description = data.get("description")
         is_important = data.get("is_important", False)
         queue_slots = data.get("queue_slots")
+        topic_list_data = data.get("topic_list_data", {"topics": []})
 
         # Создание события
         event = await group_repo.create_event(
@@ -552,19 +549,38 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
             is_important=is_important
         )
 
-        if event and queue_slots:
-            # Создаём очередь для события
+        # Создание очереди, если указаны слоты
+        if queue_slots:
             await user_repo.create_queue(event_id=str(event.id), max_slots=queue_slots)
+
+        # Создание списка тем, если есть темы
+        if topic_list_data["topics"]:
+            topic_list_id = str(uuid4())
+            topics = [
+                Topic(id=str(uuid4()), topic_list_id=topic_list_id, title=topic["title"], description=topic["description"])
+                for topic in topic_list_data["topics"]
+            ]
+            topic_list = TopicList(
+                id=topic_list_id,
+                event_id=str(event.id),
+                title="Список тем",  # Можно запросить у пользователя
+                max_participants_per_topic=10,  # Значение по умолчанию
+                created_by_user_id=created_by_user_id,
+                topics=topics
+            )
+            await group_repo.create_topic_list(topic_list)
 
         if event:
             # Успешное создание
             reply_markup = get_main_menu_leader() if user.group_membership.is_leader else get_assistant_menu()
             await state.clear()
             await callback.message.delete()
-            await callback.message.answer(
-                f"Событие «{title}» успешно создано!" + (f" Очередь на {queue_slots} мест создана." if queue_slots else ""),
-                reply_markup=reply_markup
-            )
+            success_message = f"Событие «{title}» успешно создано!"
+            if queue_slots:
+                success_message += f" Очередь на {queue_slots} мест создана."
+            if topic_list_data["topics"]:
+                success_message += f" Создан список из {len(topic_list_data['topics'])} тем."
+            await callback.message.answer(success_message, reply_markup=reply_markup)
             logger.info(f"Событие создано: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
         else:
             await callback.message.edit_text(
@@ -581,4 +597,21 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
             reply_markup=get_back_keyboard().as_markup()
         )
         await state.clear()
+        await callback.answer()
+
+async def show_topics_and_queues_menu(callback: CallbackQuery, state: FSMContext):
+    try:
+        data = await state.get_data()
+        topic_list_data = data.get("topic_list_data", {"topics": []})
+        topics_count = len(topic_list_data["topics"])
+        keyboard = get_topics_and_queues_keyboard(topics_count)
+        warning_text = "\nНажатие на кнопку 'Добавить очередь' сотрёт все темы." if topics_count > 0 else ""
+        await callback.message.edit_text(
+            f"{topics_count} Тем{warning_text}" if topics_count > 0 else "Темы и очереди",
+            reply_markup=keyboard.as_markup()
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в show_topics_and_queues_menu: {e}")
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
