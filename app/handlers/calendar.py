@@ -99,8 +99,8 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
     
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
-def get_month_selection_keyboard():
-    """Генерирует клавиатуру с 12 месяцами."""
+def get_month_selection_keyboard(current_year):
+    """Генерирует клавиатуру с 12 месяцами и навигацией по годам."""
     inline_keyboard = []
     months = list(MONTHS_RU.items())
     for i in range(0, 12, 3):
@@ -109,7 +109,11 @@ def get_month_selection_keyboard():
             for month_num, month_name in months[i:i+3]
         ]
         inline_keyboard.append(row)
-    inline_keyboard.append([InlineKeyboardButton(text="Назад", callback_data="select_week")])
+    inline_keyboard.append([InlineKeyboardButton(text="К месяцу", callback_data="select_week")])
+    inline_keyboard.append([
+        InlineKeyboardButton(text="Назад", callback_data="shift_year_-1"),
+        InlineKeyboardButton(text="Вперёд", callback_data="shift_year_1")
+    ])
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 def get_event_back_button():
@@ -207,7 +211,7 @@ async def start_select_month(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         current_year = data.get("current_year", datetime.now().year)
-        keyboard = get_month_selection_keyboard()
+        keyboard = get_month_selection_keyboard(current_year)
         await callback.message.edit_text(
             f"Выберите месяц для {current_year} года:",
             reply_markup=keyboard
@@ -215,6 +219,25 @@ async def start_select_month(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в start_select_month: {e}")
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data.startswith("shift_year_"))
+async def handle_year_shift(callback: CallbackQuery, state: FSMContext):
+    """Обработчик смены года в меню выбора месяца."""
+    try:
+        year_offset = int(callback.data.split("_")[2])
+        data = await state.get_data()
+        current_year = data.get("current_year", datetime.now().year)
+        new_year = current_year + year_offset
+        keyboard = get_month_selection_keyboard(current_year)
+        await callback.message.edit_text(
+            f"Выберите месяц для {new_year} года:",
+            reply_markup=keyboard
+        )
+        await state.update_data(current_year=new_year)
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в handle_year_shift: {e}")
         await callback.answer("Произошла ошибка.", show_alert=True)
 
 @router.callback_query(F.data.startswith("month_"))
