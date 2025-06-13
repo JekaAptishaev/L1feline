@@ -7,6 +7,7 @@ from app.db.models import User, Group, GroupMember, Event, Invite
 from datetime import datetime, timedelta
 import uuid
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ class UserRepo:
                     telegram_username=username,
                     first_name=first_name or "Неизвестно",
                     last_name=last_name,
-                    middle_name=None
+                    middle_name=None,
+                    notification_settings={}
                 )
                 self.session.add(user)
                 await self.session.commit()
@@ -52,7 +54,6 @@ class UserRepo:
             raise
 
     async def get_user_with_group_info(self, telegram_id: int) -> User | None:
-        """Получает пользователя и информацию о его группе одним запросом."""
         try:
             stmt = (
                 select(User)
@@ -68,7 +69,6 @@ class UserRepo:
             return None
 
     async def update_user(self, telegram_id: int, first_name: str, last_name: str, middle_name: str | None, username: str) -> User:
-        """Обновляет данные пользователя."""
         try:
             stmt = (
                 update(User)
@@ -94,7 +94,6 @@ class UserRepo:
             raise
 
     async def check_full_name_exists(self, last_name: str, first_name: str, middle_name: str | None) -> bool:
-        """Проверяет, существует ли пользователь с указанным ФИО."""
         try:
             stmt = select(User).where(
                 User.last_name == last_name,
@@ -111,12 +110,199 @@ class UserRepo:
             logger.error(f"Ошибка при проверке уникальности ФИО: {e}")
             raise
 
+    async def create_queue(self, event_id: str, max_slots: int) -> bool:
+        try:
+            event = await self.session.execute(select(Event).where(Event.id == event_id))
+            event = event.scalar_one_or_none()
+            if not event:
+                raise ValueError(f"Событие с event_id={event_id} не найдено")
+
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id)
+            result = await self.session.execute(stmt)
+            members = result.scalars().all()
+
+            for member in members:
+                user = await self.get_user_with_group_info(member.user_id)
+                if user:
+                    notification_settings = user.notification_settings or {}
+                    notification_settings[str(event_id)] = {
+                        "max_slots": max_slots,
+                        "entries": {}
+                    }
+                    await self.session.execute(
+                        update(User)
+                        .where(User.telegram_id == user.telegram_id)
+                        .values(notification_settings=notification_settings)
+                    )
+            await self.session.commit()
+            logger.info(f"Очередь для события event_id={event_id} создана с max_slots={max_slots}")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка при создании очереди: {e}")
+            await self.session.rollback()
+            raise
+
+    async def join_queue(self, event_id: str, user_id: int) -> tuple[bool, str, bool]:
+        """Добавляет пользователя в очередь для события, возвращая статус нахождения в очереди."""
+        try:
+            event = await self.session.execute(select(Event).where(Event.id == event_id))
+            event = event.scalar_one_or_none()
+            if not event:
+                return False, "Событие не найдено", False
+
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id, GroupMember.user_id == user_id)
+            result = await self.session.execute(stmt)
+            member = result.scalar_one_or_none()
+            if not member:
+                return False, "Вы не состоите в группе этого события", False
+
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id)
+            result = await self.session.execute(stmt)
+            members = result.scalars().all()
+
+            queue_data = None
+            for member in members:
+                user = await self.get_user_with_group_info(member.user_id)
+                if user and user.notification_settings and str(event_id) in user.notification_settings:
+                    queue_data = user.notification_settings[str(event_id)]
+                    break
+            if not queue_data:
+                return False, "Очередь для этого события не создана", False
+
+            is_in_queue = False
+            for position, queued_user_id in queue_data["entries"].items():
+                if int(queued_user_id) == user_id:
+                    is_in_queue = True
+                    return False, "Вы уже заняли место в очереди", is_in_queue
+
+            current_entries = len(queue_data["entries"])
+            max_slots = queue_data["max_slots"]
+            if current_entries >= max_slots:
+                return False, "Все места в очереди заняты", is_in_queue
+
+            position = current_entries + 1
+            queue_data["entries"][str(position)] = user_id
+
+            for member in members:
+                user = await self.get_user_with_group_info(member.user_id)
+                if user:
+                    notification_settings = user.notification_settings or {}
+                    notification_settings[str(event_id)] = queue_data
+                    await self.session.execute(
+                        update(User)
+                        .where(User.telegram_id == user.telegram_id)
+                        .values(notification_settings=notification_settings)
+                    )
+            await self.session.commit()
+            logger.info(f"Пользователь user_id={user_id} записан в очередь события event_id={event_id} на позицию {position}")
+            return True, f"Вы записаны на позицию {position}", is_in_queue
+        except Exception as e:
+            logger.error(f"Ошибка при записи в очередь: {e}")
+            await self.session.rollback()
+            return False, "Произошла ошибка при записи в очередь", False
+
+    async def leave_queue(self, event_id: str, user_id: int) -> tuple[bool, str]:
+        """Удаляет пользователя из очереди и пересчитывает позиции."""
+        try:
+            event = await self.session.execute(select(Event).where(Event.id == event_id))
+            event = event.scalar_one_or_none()
+            if not event:
+                return False, "Событие не найдено"
+
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id, GroupMember.user_id == user_id)
+            result = await self.session.execute(stmt)
+            member = result.scalar_one_or_none()
+            if not member:
+                return False, "Вы не состоите в группе этого события"
+
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id)
+            result = await self.session.execute(stmt)
+            members = result.scalars().all()
+
+            queue_data = None
+            for member in members:
+                user = await self.get_user_with_group_info(member.user_id)
+                if user and user.notification_settings and str(event_id) in user.notification_settings:
+                    queue_data = user.notification_settings[str(event_id)]
+                    break
+            if not queue_data:
+                return False, "Очередь для этого события не создана"
+
+            user_position = None
+            for position, queued_user_id in queue_data["entries"].items():
+                if int(queued_user_id) == user_id:
+                    user_position = position
+                    break
+
+            if not user_position:
+                return False, "Вы не записаны в очередь"
+
+            del queue_data["entries"][user_position]
+
+            new_entries = {}
+            for pos, uid in sorted(queue_data["entries"].items(), key=lambda x: int(x[0])):
+                new_position = str(int(pos) - 1 if int(pos) > int(user_position) else pos)
+                new_entries[new_position] = uid
+            queue_data["entries"] = new_entries
+
+            for member in members:
+                user = await self.get_user_with_group_info(member.user_id)
+                if user:
+                    notification_settings = user.notification_settings or {}
+                    notification_settings[str(event_id)] = queue_data
+                    await self.session.execute(
+                        update(User)
+                        .where(User.telegram_id == user.telegram_id)
+                        .values(notification_settings=notification_settings)
+                    )
+            await self.session.commit()
+            logger.info(f"Пользователь user_id={user_id} удалён из очереди события event_id={event_id}")
+            return True, "Вы отказались от места в очереди"
+        except Exception as e:
+            logger.error(f"Ошибка при удалении из очереди: {e}")
+            await self.session.rollback()
+            return False, "Произошла ошибка при отказе от места"
+
+    async def get_queue_entries(self, event_id: str) -> dict:
+        try:
+            event = await self.session.execute(select(Event).where(Event.id == event_id))
+            event = event.scalar_one_or_none()
+            if not event:
+                logger.error(f"Событие с event_id={event_id} не найдено")
+                return {}
+
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id)
+            result = await self.session.execute(stmt)
+            members = result.scalars().all()
+
+            queue_data = {"max_slots": 0, "entries": {}}
+            found = False
+
+            for member in members:
+                user = await self.get_user_with_group_info(member.user_id)
+                if user and user.notification_settings and str(event_id) in user.notification_settings:
+                    user_queue_data = user.notification_settings[str(event_id)]
+                    if user_queue_data.get("max_slots", 0) > queue_data["max_slots"]:
+                        queue_data["max_slots"] = user_queue_data["max_slots"]
+                    for position, user_id in user_queue_data.get("entries", {}).items():
+                        queue_data["entries"][position] = user_id
+                    found = True
+
+            if not found:
+                logger.info(f"Очередь для события event_id={event_id} не найдена")
+                return {}
+
+            logger.info(f"Очередь для события event_id={event_id} успешно собрана: {queue_data}")
+            return queue_data
+        except Exception as e:
+            logger.error(f"Ошибка при получении данных очереди: {e}")
+            return {}
+
 class GroupRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def create_group(self, name: str, creator_id: int) -> Group:
-        """Создает группу и делает создателя старостой."""
         try:
             user_stmt = select(User).where(User.telegram_id == creator_id)
             user_result = await self.session.execute(user_stmt)
@@ -151,7 +337,6 @@ class GroupRepo:
         return result.scalar_one_or_none()
 
     async def add_member(self, group_id: str, user_id: int, is_leader: bool = False):
-        """Добавляет пользователя в группу."""
         try:
             group = await self.get_group_by_id(group_id)
             if not group:
@@ -175,7 +360,6 @@ class GroupRepo:
             raise
 
     async def delete_member(self, group_id: str, user_id: int):
-        """Удаляет участника из группы."""
         try:
             stmt = (
                 select(GroupMember)
@@ -201,7 +385,6 @@ class GroupRepo:
             raise
 
     async def ban_user(self, group_id: str, user_id: int):
-        """Добавляет пользователя в бан-лист группы."""
         try:
             stmt = select(User).where(User.telegram_id == user_id)
             result = await self.session.execute(stmt)
@@ -234,7 +417,6 @@ class GroupRepo:
             raise
 
     async def unban_user(self, group_id: str, user_id: int):
-        """Удаляет пользователя из бан-листа группы."""
         try:
             await self.session.execute(
                 text(
@@ -251,7 +433,6 @@ class GroupRepo:
             raise
 
     async def get_banned_users(self, group_id: str):
-        """Возвращает список заблокированных пользователей в группе."""
         try:
             stmt = text(
                 "SELECT banned_users.user_id, users.first_name, users.last_name, users.middle_name, users.telegram_username, banned_users.banned_at "
@@ -277,7 +458,6 @@ class GroupRepo:
             raise
 
     async def is_user_banned(self, group_id: str, user_id: int) -> bool:
-        """Проверяет, находится ли пользователь в бан-листе группы."""
         try:
             stmt = text(
                 "SELECT 1 FROM banned_users "
@@ -345,13 +525,11 @@ class GroupRepo:
             raise
 
     async def get_group_members(self, group_id: str):
-        """Возвращает список участников группы."""
         stmt = select(GroupMember).where(GroupMember.group_id == group_id)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
     async def get_group_members_except_user(self, group_id: str, exclude_user_id: int):
-        """Возвращает список участников группы, кроме указанного пользователя."""
         try:
             stmt = (
                 select(GroupMember)
@@ -366,7 +544,6 @@ class GroupRepo:
             raise
 
     async def get_group_events(self, group_id: str):
-        """Возвращает все события группы с сортировкой по дате."""
         stmt = select(Event).where(Event.group_id == group_id).order_by(Event.date)
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -381,7 +558,6 @@ class GroupRepo:
         date: datetime.date = None,
         is_important: bool = False
     ) -> Event:
-        """Создаёт новое событие с полным набором полей."""
         try:
             group = await self.get_group_by_id(group_id)
             if not group:
@@ -422,7 +598,6 @@ class GroupRepo:
             raise
 
     async def get_event_by_id(self, event_id: str) -> Event | None:
-        """Возвращает событие по его ID."""
         stmt = select(Event).where(Event.id == event_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -468,7 +643,6 @@ class GroupRepo:
         return group
     
     async def leave_group(self, group_id: str, user_id: int) -> bool:
-        """Удаляет участника из группы, если он не лидер."""
         try:
             stmt = (
                 select(GroupMember)
@@ -494,7 +668,6 @@ class GroupRepo:
             return False
 
     async def delete_group(self, group_id: str, leader_id: int) -> bool:
-        """Удаляет группу, если пользователь является лидером."""
         try:
             stmt = (
                 select(GroupMember)

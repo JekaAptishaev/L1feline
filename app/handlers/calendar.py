@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from datetime import datetime, timedelta
 from app.db.repository import UserRepo, GroupRepo
+from app.keyboards.reply import get_event_details_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -15,7 +16,6 @@ class SelectWeek(StatesGroup):
 class SelectMonth(StatesGroup):
     waiting_for_month = State()
 
-# Словарь для русских названий месяцев
 MONTHS_RU = {
     1: "Январь",
     2: "Февраль",
@@ -31,7 +31,6 @@ MONTHS_RU = {
     12: "Декабрь"
 }
 
-# Словарь для русских названий дней недели
 WEEKDAYS_RU = {
     0: "Понедельник",
     1: "Вторник",
@@ -43,18 +42,16 @@ WEEKDAYS_RU = {
 }
 
 def get_week_dates(offset=0, base_date=None):
-    """Возвращает даты начала и конца недели с учетом смещения."""
     if base_date is None:
         base_date = datetime.now().date()
-    start_of_week = base_date - timedelta(days=base_date.weekday())  # Понедельник
-    start_of_week += timedelta(weeks=offset)  # Смещение
-    end_of_week = start_of_week + timedelta(days=6)  # Воскресенье
+    start_of_week = base_date - timedelta(days=base_date.weekday())
+    start_of_week += timedelta(weeks=offset)
+    end_of_week = start_of_week + timedelta(days=6)
     return start_of_week, end_of_week
 
 def format_week_label(start_date):
-    """Форматирует метку недели, например, '2-8 Сентябрь'."""
     end_date = start_date + timedelta(days=6)
-    start_day = start_date.strftime("%d").lstrip("0")  # Убираем ведущий ноль
+    start_day = start_date.strftime("%d").lstrip("0")
     end_day = end_date.strftime("%d").lstrip("0")
     start_month = MONTHS_RU[start_date.month]
     month_name = start_month
@@ -64,10 +61,8 @@ def format_week_label(start_date):
     return f"{start_day}-{end_day} {month_name}"
 
 def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=False, week_offset=0):
-    """Генерирует клавиатуру для недельного календаря."""
     inline_keyboard = []
     
-    # Кнопки для событий
     if events and not show_week_selection:
         for event in sorted(events, key=lambda e: e.date):
             day = event.date.strftime("%d").lstrip("0")
@@ -75,7 +70,6 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
             button_text = f"{day} {weekday}: {event.title} {'[Важное]' if event.is_important else ''}"
             inline_keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"event_{event.id}")])
     
-    # Кнопки навигации
     if not show_week_selection:
         nav_buttons = [
             InlineKeyboardButton(text="Выбрать неделю", callback_data="select_week"),
@@ -84,23 +78,19 @@ def get_weekly_calendar_keyboard(events, start_of_week, show_week_selection=Fals
         ]
         inline_keyboard.append(nav_buttons)
     else:
-        # Кнопки выбора недели
         for i in range(-1, 2):
             week_start, _ = get_week_dates(week_offset + i)
             label = format_week_label(week_start)
             inline_keyboard.append([InlineKeyboardButton(text=label, callback_data=f"week_{week_offset+i}")])
-        # Кнопки "Назад" и "Вперёд"
         inline_keyboard.append([
             InlineKeyboardButton(text="Назад", callback_data=f"shift_weeks_{week_offset-1}"),
             InlineKeyboardButton(text="Вперёд", callback_data=f"shift_weeks_{week_offset+1}")
         ])
-        # Кнопка "Выбрать месяц"
         inline_keyboard.append([InlineKeyboardButton(text="Выбрать месяц", callback_data="select_month")])
     
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 def get_month_selection_keyboard(current_year):
-    """Генерирует клавиатуру с 12 месяцами и навигацией по годам."""
     inline_keyboard = []
     months = list(MONTHS_RU.items())
     for i in range(0, 12, 3):
@@ -116,15 +106,8 @@ def get_month_selection_keyboard(current_year):
     ])
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
-def get_event_back_button():
-    """Генерирует кнопку возврата к недельному календарю."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад к неделе", callback_data="week_0")]
-    ])
-
 @router.message(F.text == "📅 Показать календарь")
 async def show_calendar(message: Message, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
-    """Обработчик команды 'Показать календарь' для отображения недельного календаря."""
     try:
         user = await user_repo.get_user_with_group_info(message.from_user.id)
         if not user or not user.group_membership:
@@ -132,7 +115,7 @@ async def show_calendar(message: Message, user_repo: UserRepo, group_repo: Group
             return
 
         group = user.group_membership.group
-        start_of_week, end_of_week = get_week_dates()  # Текущая неделя
+        start_of_week, end_of_week = get_week_dates()
         events = await group_repo.get_group_events(group.id)
         week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
         
@@ -145,14 +128,13 @@ async def show_calendar(message: Message, user_repo: UserRepo, group_repo: Group
             f"Неделя с {start_day} {start_month} по {end_day} {end_month}",
             reply_markup=keyboard
         )
-        await state.update_data(week_offset=0, current_year=datetime.now().year)  # Сохраняем текущий год
+        await state.update_data(week_offset=0, current_year=datetime.now().year)
     except Exception as e:
         logger.error(f"Ошибка в show_calendar: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.callback_query(F.data.startswith("week_"))
 async def handle_week_selection(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
-    """Обработчик выбора недели."""
     try:
         offset = int(callback.data.split("_")[1])
         user = await user_repo.get_user_with_group_info(callback.from_user.id)
@@ -183,7 +165,6 @@ async def handle_week_selection(callback: CallbackQuery, user_repo: UserRepo, gr
 
 @router.callback_query(F.data == "select_week")
 async def start_select_week(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
-    """Обработчик начала выбора недели."""
     try:
         data = await state.get_data()
         week_offset = data.get("week_offset", 0)
@@ -207,7 +188,6 @@ async def start_select_week(callback: CallbackQuery, user_repo: UserRepo, group_
 
 @router.callback_query(F.data == "select_month")
 async def start_select_month(callback: CallbackQuery, state: FSMContext):
-    """Обработчик начала выбора месяца."""
     try:
         data = await state.get_data()
         current_year = data.get("current_year", datetime.now().year)
@@ -223,13 +203,12 @@ async def start_select_month(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("shift_year_"))
 async def handle_year_shift(callback: CallbackQuery, state: FSMContext):
-    """Обработчик смены года в меню выбора месяца."""
     try:
         year_offset = int(callback.data.split("_")[2])
         data = await state.get_data()
         current_year = data.get("current_year", datetime.now().year)
         new_year = current_year + year_offset
-        keyboard = get_month_selection_keyboard(current_year)
+        keyboard = get_month_selection_keyboard(new_year)
         await callback.message.edit_text(
             f"Выберите месяц для {new_year} года:",
             reply_markup=keyboard
@@ -242,18 +221,16 @@ async def handle_year_shift(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("month_"))
 async def handle_month_selection(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
-    """Обработчик выбора месяца."""
     try:
         month = int(callback.data.split("_")[1])
         data = await state.get_data()
         current_year = data.get("current_year", datetime.now().year)
         
-        # Вычисляем смещение недели так, чтобы 1-е число месяца попало в первую неделю
         first_day = datetime(current_year, month, 1).date()
-        week_start = first_day - timedelta(days=first_day.weekday())  # Понедельник той недели
+        week_start = first_day - timedelta(days=first_day.weekday())
         today = datetime.now().date()
         current_week_start = today - timedelta(days=today.weekday())
-        offset = (week_start - current_week_start).days // 7  # Смещение относительно текущей недели
+        offset = (week_start - current_week_start).days // 7
 
         user = await user_repo.get_user_with_group_info(callback.from_user.id)
         if not user or not user.group_membership:
@@ -283,7 +260,6 @@ async def handle_month_selection(callback: CallbackQuery, user_repo: UserRepo, g
 
 @router.callback_query(F.data.startswith("shift_weeks_"))
 async def handle_shift_weeks(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
-    """Обработчик смещения списка недель."""
     try:
         new_offset = int(callback.data.split("_")[2])
         user = await user_repo.get_user_with_group_info(callback.from_user.id)
@@ -306,30 +282,185 @@ async def handle_shift_weeks(callback: CallbackQuery, user_repo: UserRepo, group
         await callback.answer("Произошла ошибка.", show_alert=True)
 
 @router.callback_query(F.data.startswith("event_"))
-async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo):
-    """Обработчик для отображения деталей события."""
+async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo, user_repo: UserRepo, state: FSMContext):
     try:
         event_id = callback.data.replace("event_", "")
         event = await group_repo.get_event_by_id(event_id)
-        if event:
-            day = event.date.strftime("%d").lstrip("0")
-            month = MONTHS_RU[event.date.month]
-            year = event.date.strftime("%Y")
-            details = (
-                f"Детали события:\n"
-                f"Название: {event.title}\n"
-                f"Дата: {day} {month} {year}\n"
-            )
-            if event.description:
-                details += f"Описание: {event.description}\n"
-            if event.subject:
-                details += f"Тема: {event.subject}\n"
-            details += f"{'[Важное]' if event.is_important else ''}"
-            keyboard = get_event_back_button()
-            await callback.message.edit_text(details, reply_markup=keyboard)
-        else:
+        if not event:
             await callback.message.edit_text("Событие не найдено.")
+            await callback.answer()
+            return
+
+        queue_data = await user_repo.get_queue_entries(event_id)
+        has_queue = bool(queue_data and "max_slots" in queue_data)
+        is_in_queue = False
+        if has_queue:
+            for position, queued_user_id in queue_data["entries"].items():
+                if int(queued_user_id) == callback.from_user.id:
+                    is_in_queue = True
+                    break
+
+        data = await state.get_data()
+        show_view_queue = data.get(f"show_view_queue_{event_id}", True)
+
+        day = event.date.strftime("%d").lstrip("0")
+        month = MONTHS_RU[event.date.month]
+        year = event.date.strftime("%Y")
+        details = (
+            f"Детали события:\n"
+            f"Название: {event.title}\n"
+            f"Дата: {day} {month} {year}\n"
+        )
+        if event.description:
+            details += f"Описание: {event.description}\n"
+        if event.subject:
+            details += f"Тема: {event.subject}\n"
+        details += f"{'[Важное]' if event.is_important else ''}"
+        if has_queue:
+            details += f"\nОчередь: {len(queue_data.get('entries', {}))}/{queue_data['max_slots']} мест занято"
+
+        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue, show_view_queue)
+        await callback.message.edit_text(details, reply_markup=keyboard)
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в handle_event_details: {e}")
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data.startswith("join_queue_"))
+async def join_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
+    try:
+        event_id = callback.data.replace("join_queue_", "")
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
+            await callback.message.edit_text("Вы не состоите в группе.")
+            await callback.answer()
+            return
+
+        success, message, is_in_queue = await user_repo.join_queue(event_id, user.telegram_id)
+        event = await group_repo.get_event_by_id(event_id)
+        queue_data = await user_repo.get_queue_entries(event_id)
+        has_queue = bool(queue_data and "max_slots" in queue_data)
+
+        data = await state.get_data()
+        show_view_queue = data.get(f"show_view_queue_{event_id}", True)
+
+        day = event.date.strftime("%d").lstrip("0")
+        month = MONTHS_RU[event.date.month]
+        year = event.date.strftime("%Y")
+        details = (
+            f"Детали события:\n"
+            f"Название: {event.title}\n"
+            f"Дата: {day} {month} {year}\n"
+        )
+        if event.description:
+            details += f"Описание: {event.description}\n"
+        if event.subject:
+            details += f"Тема: {event.subject}\n"
+        details += f"{'[Важное]' if event.is_important else ''}"
+        if has_queue:
+            details += f"\nОчередь: {len(queue_data.get('entries', {}))}/{queue_data['max_slots']} мест занято"
+
+        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue or success, show_view_queue)
+        await callback.message.edit_text(details, reply_markup=keyboard)
+        await callback.answer(message, show_alert=True)
+    except Exception as e:
+        logger.error(f"Ошибка в join_queue: {e}")
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data.startswith("leave_queue_"))
+async def leave_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
+    try:
+        event_id = callback.data.replace("leave_queue_", "")
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
+            await callback.message.edit_text("Вы не состоите в группе.")
+            await callback.answer()
+            return
+
+        success, message = await user_repo.leave_queue(event_id, user.telegram_id)
+        event = await group_repo.get_event_by_id(event_id)
+        queue_data = await user_repo.get_queue_entries(event_id)
+        has_queue = bool(queue_data and "max_slots" in queue_data)
+        is_in_queue = False
+
+        # Сбрасываем состояние show_view_queue для данного события
+        await state.update_data(**{f"show_view_queue_{event_id}": True})
+        show_view_queue = True
+
+        day = event.date.strftime("%d").lstrip("0")
+        month = MONTHS_RU[event.date.month]
+        year = event.date.strftime("%Y")
+        details = (
+            f"Детали события:\n"
+            f"Название: {event.title}\n"
+            f"Дата: {day} {month} {year}\n"
+        )
+        if event.description:
+            details += f"Описание: {event.description}\n"
+        if event.subject:
+            details += f"Тема: {event.subject}\n"
+        details += f"{'[Важное]' if event.is_important else ''}"
+        if has_queue:
+            details += f"\nОчередь: {len(queue_data.get('entries', {}))}/{queue_data['max_slots']} мест занято"
+
+        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue, show_view_queue)
+        await callback.message.edit_text(details, reply_markup=keyboard)
+        await callback.answer(message, show_alert=True)
+    except Exception as e:
+        logger.error(f"Ошибка в leave_queue: {e}")
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data.startswith("view_queue_"))
+async def view_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
+    try:
+        event_id = callback.data.replace("view_queue_", "")
+        event = await group_repo.get_event_by_id(event_id)
+        if not event:
+            await callback.message.edit_text("Событие не найдено.")
+            await callback.answer()
+            return
+
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership or str(user.group_membership.group.id) != str(event.group_id):
+            await callback.message.edit_text("У вас нет доступа к этой очереди.")
+            await callback.answer()
+            return
+
+        queue_data = await user_repo.get_queue_entries(event_id)
+        if not queue_data or "entries" not in queue_data:
+            await callback.message.edit_text("Очередь для этого события не создана.")
+            await callback.answer()
+            return
+
+        entries = queue_data["entries"]
+        max_slots = queue_data["max_slots"]
+        response = f"Очередь для события «{event.title}» ({len(entries)}/{max_slots} мест занято):\n"
+
+        sorted_entries = sorted(entries.items(), key=lambda x: int(x[0]))
+        for position, user_id in sorted_entries:
+            user_info = await user_repo.get_user_with_group_info(int(user_id))
+            if user_info:
+                full_name = f"{user_info.last_name or ''} {user_info.first_name} {user_info.middle_name or ''}".strip()
+                response += f"{position}. {full_name} (@{user_info.telegram_username or 'без имени'})\n"
+            else:
+                response += f"{position}. Неизвестный пользователь (ID: {user_id})\n"
+
+        if not entries:
+            response += "Очередь пуста."
+
+        is_in_queue = False
+        for position, queued_user_id in entries.items():
+            if int(queued_user_id) == callback.from_user.id:
+                is_in_queue = True
+                break
+
+        await state.update_data(**{f"show_view_queue_{event_id}": False})
+        await callback.message.edit_text(
+            response,
+            reply_markup=get_event_details_keyboard(event_id, True, is_in_queue, show_view_queue=False)
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в view_queue: {e}")
+        await callback.message.edit_text("Произошла ошибка при просмотре очереди.")
         await callback.answer("Произошла ошибка.", show_alert=True)
