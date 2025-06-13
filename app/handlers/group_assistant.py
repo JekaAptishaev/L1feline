@@ -19,7 +19,7 @@ class CreateEvent(StatesGroup):
     waiting_for_description = State()
     waiting_for_date = State()
     waiting_for_importance = State()
-    waiting_for_additional = State()
+    waiting_for_topics_and_queues = State()
 
 # Словарь для перевода месяцев на русский
 MONTHS_RU = {
@@ -62,10 +62,10 @@ def get_create_event_keyboard(data: dict) -> InlineKeyboardBuilder:
         date_text = "Дата: Завтра"
     keyboard.button(text=description_text, callback_data="edit_description")
     keyboard.button(text=date_text, callback_data="edit_date")
-    # Третий ряд: Важность, Дополнительно
+    # Третий ряд: Важность, Темы и очереди
     importance_text = f"Важное: {'Да' if data.get('is_important') else 'Нет'}"
     keyboard.button(text=importance_text, callback_data="edit_importance")
-    keyboard.button(text="Дополнительно", callback_data="edit_additional")
+    keyboard.button(text="Темы и очереди", callback_data="edit_topics_and_queues")
     # Четвертый ряд: Отмена, Готово
     keyboard.button(text="Отмена", callback_data="cancel_event_creation")
     keyboard.button(text="Готово", callback_data="finish_event_creation")
@@ -117,8 +117,16 @@ def get_date_selection_keyboard(current_date: str = None) -> InlineKeyboardBuild
     day6 = today + timedelta(days=6)
     keyboard.button(text="Отмена", callback_data="back_to_menu")
     keyboard.button(text=format_date_with_day_ru(day6), callback_data=f"set_date_{day6.strftime('%Y-%m-%d')}")
-
     keyboard.adjust(2, 2, 2, 2)
+    return keyboard
+
+def get_topics_and_queues_keyboard() -> InlineKeyboardBuilder:
+    """Генерирует клавиатуру для меню 'Темы и очереди'."""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="Добавить темы", callback_data="add_topics")
+    keyboard.button(text="Добавить очередь", callback_data="add_queue")
+    keyboard.button(text="Назад", callback_data="back_to_menu")
+    keyboard.adjust(2, 1)
     return keyboard
 
 @router.message(F.text == "➕ Создать событие")
@@ -408,14 +416,48 @@ async def process_importance(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
 
-@router.callback_query(F.data == "edit_additional")
-async def edit_additional(callback: CallbackQuery, state: FSMContext):
-    """Заглушка для редактирования дополнительных параметров."""
+@router.callback_query(F.data == "edit_topics_and_queues")
+async def edit_topics_and_queues(callback: CallbackQuery, state: FSMContext):
+    """Обрабатывает запрос на редактирование тем и очередей."""
     try:
-        await callback.message.edit_text("Функция редактирования дополнительных параметров пока не реализована.", reply_markup=get_back_keyboard().as_markup())
+        await state.set_state(CreateEvent.waiting_for_topics_and_queues)
+        keyboard = get_topics_and_queues_keyboard()
+        await callback.message.edit_text(
+            "Темы и очереди",
+            reply_markup=keyboard.as_markup()
+        )
         await callback.answer()
     except Exception as e:
-        logger.error(f"Ошибка в edit_additional: {e}")
+        logger.error(f"Ошибка в edit_topics_and_queues: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data == "add_topics")
+async def add_topics(callback: CallbackQuery, state: FSMContext):
+    """Заглушка для добавления тем."""
+    try:
+        await callback.message.edit_text(
+            "Функция добавления тем пока не реализована.",
+            reply_markup=get_back_keyboard().as_markup()
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в add_topics: {e}")
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
+        await callback.answer()
+
+@router.callback_query(F.data == "add_queue")
+async def add_queue(callback: CallbackQuery, state: FSMContext):
+    """Заглушка для добавления очереди."""
+    try:
+        await callback.message.edit_text(
+            "Функция добавления очереди пока не реализована.",
+            reply_markup=get_back_keyboard().as_markup()
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в add_queue: {e}")
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
 
