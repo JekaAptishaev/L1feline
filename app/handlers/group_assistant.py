@@ -67,23 +67,22 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.callback_query(F.data == "cancel_event_creation")
-async def cancel_event_creation(callback: CallbackQuery, state: FSMContext):
+async def cancel_event_creation(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo):
     """Отменяет создание события."""
     try:
-        user = await callback.from_user
-        user_info = await UserRepo(callback.bot.session).get_user_with_group_info(user.id)
-        if not user_info or not user_info.group_membership:
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
             await callback.message.answer("Вы не состоите в группе.")
             await state.clear()
             return
 
-        reply_markup = get_assistant_menu() if user_info.group_membership.is_assistant else get_main_menu_leader()
+        reply_markup = get_main_menu_leader() if user.group_membership.is_leader else get_assistant_menu()
         await state.clear()
         await callback.message.delete()
         await callback.message.answer("Создание события отменено.", reply_markup=reply_markup)
         await callback.answer()
     except Exception as e:
-        logger.error(f"Ошибка в cancel_event_creation: {e}")
+        logger.error(f"Ошибка в cancel_event_creation: {e}", exc_info=True)
         await state.clear()
         await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
         await callback.answer()
