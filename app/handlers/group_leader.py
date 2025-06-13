@@ -1,11 +1,11 @@
 import logging
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import GroupRepo, UserRepo
-from app.keyboards.reply import get_main_menu_leader, get_main_menu_unregistered
+from app.keyboards.reply import get_main_menu_leader, get_assistant_menu, get_regular_member_menu, get_main_menu_unregistered
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ async def cancel_make_assistant(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 @router.message(MakeAssistant.waiting_for_member_number, F.text)
-async def process_make_assistant(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+async def process_make_assistant(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo, bot: Bot):
     try:
         data = await state.get_data()
         members = data.get("members")
@@ -144,6 +144,11 @@ async def process_make_assistant(message: Message, state: FSMContext, user_repo:
             return
 
         await group_repo.make_assistant(group_id=group_id, user_id=member_to_update.user_id)
+        await bot.send_message(
+            member_user.telegram_id,
+            "Поздравляем, вы назначены ассистентом! Используйте новое меню для управления группой.",
+            reply_markup=get_assistant_menu()
+        )
         logger.info(f"Пользователь user_id={member_to_update.user_id} назначен ассистентом в группе group_id={group_id}")
         await state.clear()
         await message.answer(
@@ -280,7 +285,7 @@ async def cancel_remove_assistant(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 @router.message(DeleteMember.waiting_for_member_number, F.text)
-async def process_delete_member(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+async def process_delete_member(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo, bot: Bot):
     try:
         data = await state.get_data()
         members = data.get("members")
@@ -312,6 +317,11 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
             return
 
         await group_repo.delete_member(group_id=group_id, user_id=member_to_delete.user_id)
+        await bot.send_message(
+            member_user.telegram_id,
+            "Вас выгнали из группы.",
+            reply_markup=get_main_menu_unregistered()
+        )
         await state.clear()
         await message.answer(
             f"Участник {member_user.first_name} {member_user.last_name or ''} удалён из группы.",
@@ -323,7 +333,7 @@ async def process_delete_member(message: Message, state: FSMContext, user_repo: 
         await message.answer("Произошла ошибка при удалении участника. Попробуйте позже.")
 
 @router.message(RemoveAssistant.waiting_for_member_number, F.text)
-async def process_remove_assistant(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+async def process_remove_assistant(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo, bot: Bot):
     try:
         data = await state.get_data()
         members = data.get("members")
@@ -355,6 +365,11 @@ async def process_remove_assistant(message: Message, state: FSMContext, user_rep
             return
 
         await group_repo.remove_assistant(group_id=group_id, user_id=member_to_update.user_id)
+        await bot.send_message(
+            member_user.telegram_id,
+            "Ваша роль ассистента снята. Используйте стандартное меню участника.",
+            reply_markup=get_regular_member_menu()
+        )
         await state.clear()
         await message.answer(
             f"С участника {member_user.first_name} {member_user.last_name or ''} снята роль ассистента.",
