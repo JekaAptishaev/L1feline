@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from app.db.repository import UserRepo, GroupRepo
-from app.keyboards.reply import get_regular_member_menu, get_main_menu_unregistered
+from app.keyboards.reply import get_main_menu_unregistered
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -64,8 +64,6 @@ async def show_calendar_member(message: Message, state: FSMContext, user_repo: U
     except Exception as e:
         logger.error(f"Ошибка в show_calendar_member: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
-
-@router.message(Command("weekly_calendar"))
 
 @router.message(F.text == "👥 Участники группы")
 async def handle_group_members_leader(message: Message, user_repo: UserRepo, group_repo: GroupRepo):
