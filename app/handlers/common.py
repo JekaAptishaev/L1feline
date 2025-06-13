@@ -1,10 +1,11 @@
 import logging
 import re
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import UserRepo, GroupRepo
 from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader, get_regular_member_menu, get_assistant_menu
 
@@ -190,11 +191,27 @@ async def start_join_group(message: Message, state: FSMContext, user_repo: UserR
             await message.answer("Вы уже состоите в группе. Нельзя присоединиться к другой.")
             return
         await state.set_state(JoinGroup.waiting_for_invite_token)
-        await message.answer("Введите ключ доступа для присоединения к группе (например, xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx):")
-
+        keyboard = InlineKeyboardBuilder()
+        keyboard.button(text="Отмена", callback_data="cancel_join_group")
+        await message.answer(
+            "Введите ключ доступа для присоединения к группе (например, xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx):",
+            reply_markup=keyboard.as_markup()
+        )
     except Exception as e:
         logger.error(f"Ошибка в start_join_group: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.callback_query(F.data == "cancel_join_group")
+async def cancel_join_group(callback: CallbackQuery, state: FSMContext):
+    try:
+        await state.clear()
+        await callback.message.delete()
+        await callback.message.answer("Присоединение к группе отменено.", reply_markup=get_main_menu_unregistered())
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в cancel_join_group: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка при отмене. Попробуйте позже.")
 
 @router.message(JoinGroup.waiting_for_invite_token)
 async def process_invite_link(message: Message, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
@@ -219,10 +236,17 @@ async def process_invite_link(message: Message, state: FSMContext, user_repo: Us
                 last_name=message.from_user.last_name or None
             )
 
+        if await group_repo.is_user_banned(group.id, user.telegram_id):
+            await message.answer("Вы не можете зайти, так как вас заблокировали.")
+            await state.clear()
+            return
+
         await group_repo.add_member(group_id=group.id, user_id=user.telegram_id, is_leader=False)
         await state.clear()
-        await message.answer(f"Вы успешно присоединились к группе «{group.name}»!",
-                             reply_markup=get_regular_member_menu())
+        await message.answer(
+            f"Вы успешно присоединились к группе «{group.name}»!",
+            reply_markup=get_regular_member_menu()
+        )
     except Exception as e:
         logger.error(f"Ошибка в process_invite_link: {e}")
         await state.clear()
