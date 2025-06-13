@@ -51,7 +51,7 @@ async def get_or_create_user(self, telegram_id: int, username: str | None, first
             logger.error(f"Ошибка при получении/создании пользователя: {e}", exc_info=True)
             raise
 
-    async def get_user_with_group_info(self, telegram_id: int) -> User | None:
+async def get_user_with_group_info(self, telegram_id: int) -> User | None:
         """Получает пользователя и информацию о его группе одним запросом."""
         try:
             stmt = (
@@ -67,7 +67,7 @@ async def get_or_create_user(self, telegram_id: int, username: str | None, first
             logger.error(f"Ошибка при получении пользователя с группой: {e}")
             return None
 
-    async def update_user(self, telegram_id: int, first_name: str, last_name: str, middle_name: str | None, username: str) -> User:
+async def update_user(self, telegram_id: int, first_name: str, last_name: str, middle_name: str | None, username: str) -> User:
         """Обновляет данные пользователя."""
         try:
             stmt = (
@@ -93,7 +93,7 @@ async def get_or_create_user(self, telegram_id: int, username: str | None, first
             await self.session.rollback()
             raise
 
-    async def check_full_name_exists(self, last_name: str, first_name: str, middle_name: str | None) -> bool:
+async def check_full_name_exists(self, last_name: str, first_name: str, middle_name: str | None) -> bool:
         """Проверяет, существует ли пользователь с указанным ФИО."""
         try:
             stmt = select(User).where(
