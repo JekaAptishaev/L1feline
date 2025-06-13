@@ -1,9 +1,7 @@
-from sqlalchemy import Column, String, DateTime, Index, ForeignKey, Boolean, Date, BigInteger, text, Integer
+from sqlalchemy import Column, String, DateTime, Index, ForeignKey, Boolean, Date, BigInteger
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, DeclarativeBase
-from datetime import datetime
-import uuid
 
 class Base(DeclarativeBase):
     """Базовый класс для всех моделей."""
@@ -79,13 +77,13 @@ class Event(Base):
 Group.events = relationship("Event", back_populates="group", cascade="all, delete-orphan")
 
 class Invite(Base):
-    __tablename__ = "groupinvitations"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    group_id = Column(UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
-    invited_by_user_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=False)
-    invite_token = Column(String, nullable=False, unique=True)
+    __tablename__ = 'groupinvitations'
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    group_id = Column(UUID(as_uuid=True), ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    invited_by_user_id = Column(BigInteger, ForeignKey('users.telegram_id'), nullable=False)
+    invite_token = Column(String(36), unique=True, nullable=False)
     expires_at = Column(Date, nullable=False)
     is_used = Column(Boolean, default=False)
-    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     group = relationship("Group", back_populates="invitations")
+    user = relationship("User", foreign_keys=[invited_by_user_id])

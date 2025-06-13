@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import delete, update, text
+from sqlalchemy import delete, update
 from app.db.models import User, Group, GroupMember, Event, Invite
 from datetime import datetime, timedelta
 import uuid
@@ -14,11 +14,7 @@ class UserRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-<<<<<<< banlist
-    async def get_or_create_user(self, telegram_id: int, username: str, first_name: str | None, last_name: str | None) -> User:
-=======
     async def get_or_create_user(self, telegram_id: int, username: str | None, first_name: str | None, last_name: str | None) -> User:
->>>>>>> main
         try:
             logger.info(f"Попытка получить пользователя с telegram_id={telegram_id}")
             stmt = (
@@ -202,98 +198,6 @@ class GroupRepo:
         except Exception as e:
             logger.error(f"Ошибка при удалении участника: {e}")
             await self.session.rollback()
-            raise
-
-    async def ban_user(self, group_id: str, user_id: int):
-        """Добавляет пользователя в бан-лист группы."""
-        try:
-            stmt = select(User).where(User.telegram_id == user_id)
-            result = await self.session.execute(stmt)
-            if not result.scalar_one_or_none():
-                raise ValueError(f"Пользователь с telegram_id={user_id} не найден")
-
-            stmt = select(Group).where(Group.id == group_id)
-            result = await self.session.execute(stmt)
-            if not result.scalar_one_or_none():
-                raise ValueError(f"Группа с ID={group_id} не найдена")
-
-            banned_user = {
-                "group_id": group_id,
-                "user_id": user_id,
-                "banned_at": datetime.utcnow()
-            }
-            await self.session.execute(
-                text(
-                    "INSERT INTO banned_users (group_id, user_id, banned_at) "
-                    "VALUES (:group_id, :user_id, :banned_at) "
-                    "ON CONFLICT (group_id, user_id) DO NOTHING"
-                ),
-                banned_user
-            )
-            await self.session.commit()
-            logger.info(f"Пользователь user_id={user_id} добавлен в бан-лист группы group_id={group_id}")
-        except Exception as e:
-            logger.error(f"Ошибка при добавлении в бан-лист: {e}")
-            await self.session.rollback()
-            raise
-
-    async def unban_user(self, group_id: str, user_id: int):
-        """Удаляет пользователя из бан-листа группы."""
-        try:
-            await self.session.execute(
-                text(
-                    "DELETE FROM banned_users "
-                    "WHERE group_id = :group_id AND user_id = :user_id"
-                ),
-                {"group_id": group_id, "user_id": user_id}
-            )
-            await self.session.commit()
-            logger.info(f"Пользователь user_id={user_id} удалён из бан-листа группы group_id={group_id}")
-        except Exception as e:
-            logger.error(f"Ошибка при удалении из бан-листа: {e}")
-            await self.session.rollback()
-            raise
-
-    async def get_banned_users(self, group_id: str):
-        """Возвращает список заблокированных пользователей в группе."""
-        try:
-            stmt = text(
-                "SELECT banned_users.user_id, users.first_name, users.last_name, users.middle_name, users.telegram_username, banned_users.banned_at "
-                "FROM banned_users "
-                "JOIN users ON banned_users.user_id = users.telegram_id "
-                "WHERE banned_users.group_id = :group_id"
-            )
-            result = await self.session.execute(stmt, {"group_id": group_id})
-            banned_users = result.fetchall()
-            return [
-                {
-                    "user_id": row.user_id,
-                    "first_name": row.first_name,
-                    "last_name": row.last_name,
-                    "middle_name": row.middle_name,
-                    "telegram_username": row.telegram_username,
-                    "banned_at": row.banned_at
-                }
-                for row in banned_users
-            ]
-        except Exception as e:
-            logger.error(f"Ошибка при получении бан-листа: {e}")
-            raise
-
-    async def is_user_banned(self, group_id: str, user_id: int) -> bool:
-        """Проверяет, находится ли пользователь в бан-листе группы."""
-        try:
-            stmt = text(
-                "SELECT 1 FROM banned_users "
-                "WHERE group_id = :group_id AND user_id = :user_id"
-            )
-            result = await self.session.execute(
-                stmt,
-                {"group_id": group_id, "user_id": user_id}
-            )
-            return result.scalar_one_or_none() is not None
-        except Exception as e:
-            logger.error(f"Ошибка при проверке бан-листа: {e}")
             raise
 
     async def make_assistant(self, group_id: str, user_id: int):
