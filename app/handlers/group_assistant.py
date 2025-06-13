@@ -420,14 +420,85 @@ async def edit_additional(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 @router.callback_query(F.data == "finish_event_creation")
-async def finish_event_creation(callback: CallbackQuery, state: FSMContext):
-    """Заглушка для завершения создания события."""
+async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
+    """Завершает создание события."""
     try:
-        await callback.message.edit_text("Функция завершения создания события пока не реализована.", reply_markup=get_back_keyboard().as_markup())
+        data = await state.get_data()
+        title = data.get("title")
+        date_str = data.get("date")
+
+        # Проверка обязательных полей
+        if not title or not date_str:
+            await callback.message.edit_text(
+                "Не заполнены обязательные поля: Название и Дата.",
+                reply_markup=get_back_keyboard().as_markup()
+            )
+            await callback.answer()
+            return
+
+        # Проверка формата даты
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            await callback.message.edit_text(
+                "Неверный формат даты. Пожалуйста, исправьте дату.",
+                reply_markup=get_back_keyboard().as_markup()
+            )
+            await callback.answer()
+            return
+
+        # Получение информации о пользователе и группе
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
+            await callback.message.edit_text("Вы не состоите в группе.")
+            await state.clear()
+            await callback.answer()
+            return
+
+        group_id = str(user.group_membership.group.id)
+        created_by_user_id = callback.from_user.id
+
+        # Сбор необязательных полей
+        subject = data.get("subject")
+        description = data.get("description")
+        is_important = data.get("is_important", False)
+
+        # Создание события
+        event = await group_repo.create_event(
+            group_id=group_id,
+            created_by_user_id=created_by_user_id,
+            title=title,
+            description=description,
+            subject=subject,
+            date=date_str,
+            is_important=is_important
+        )
+
+        if event:
+            # Успешное создание
+            reply_markup = get_main_menu_leader() if user.group_membership.is_leader else get_assistant_menu()
+            await state.clear()
+            await callback.message.delete()
+            await callback.message.answer(
+                f"Событие «{title}» успешно создано!",
+                reply_markup=reply_markup
+            )
+            logger.info(f"Событие создано: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
+        else:
+            await callback.message.edit_text(
+                "Не удалось создать событие. Попробуйте позже.",
+                reply_markup=get_back_keyboard().as_markup()
+            )
+            logger.error(f"Не удалось создать событие: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
+
         await callback.answer()
     except Exception as e:
-        logger.error(f"Ошибка в finish_event_creation: {e}")
-        await callback.message.answer("Произошла ошибка. Попробуйте позже.")
+        logger.error(f"Ошибка в finish_event_creation: {e}", exc_info=True)
+        await callback.message.edit_text(
+            "Произошла ошибка при создании события. Попробуйте позже.",
+            reply_markup=get_back_keyboard().as_markup()
+        )
+        await state.clear()
         await callback.answer()
 
 @router.message(F.text == "🚪 Выйти из группы")
