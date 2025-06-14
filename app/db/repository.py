@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import uuid
 import logging
 import json
+from aiogram import Bot  # Импортируем Bot
 
 logger = logging.getLogger(__name__)
 
@@ -299,8 +300,9 @@ class UserRepo:
             return {}
 
 class GroupRepo:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, bot: Bot):  # Добавляем bot в конструктор
         self.session = session
+        self.bot = bot  # Сохраняем экземпляр Bot
 
     async def create_group(self, name: str, creator_id: int) -> Group:
         try:
@@ -587,6 +589,31 @@ class GroupRepo:
             self.session.add(event)
             await self.session.commit()
             await self.session.refresh(event)
+
+            # Уведомляем всех участников группы, кроме создателя
+            members = await self.get_group_members_except_user(group_id, created_by_user_id)
+            notification_text = (
+                f"Новое событие в группе «{group.name}»:\n"
+                f"Название: {title}\n"
+                f"Дата: {event_date.strftime('%d.%m.%Y')}\n"
+            )
+            if description:
+                notification_text += f"Описание: {description}\n"
+            if subject:
+                notification_text += f"Предмет: {subject}\n"
+            if is_important:
+                notification_text += "⚠️ [Важное]"
+
+            for member in members:
+                try:
+                    await self.bot.send_message(
+                        chat_id=member.user_id,
+                        text=notification_text
+                    )
+                    logger.info(f"Уведомление отправлено пользователю user_id={member.user_id} о событии event_id={event.id}")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке уведомления пользователю user_id={member.user_id}: {e}")
+
             return event
         except IntegrityError as e:
             logger.error(f"Ошибка целостности при создании события: {e}")
@@ -698,3 +725,45 @@ class GroupRepo:
             logger.error(f"Ошибка при удалении группы: {e}")
             await self.session.rollback()
             return False
+    
+    async def delete_event(self, event_id: str):
+        try:
+            # Проверяем существование события
+            stmt = select(Event).where(Event.id == event_id)
+            result = await self.session.execute(stmt)
+            event = result.scalar_one_or_none()
+            if not event:
+                logger.error(f"Событие с event_id={event_id} не найдено")
+                raise ValueError(f"Событие с ID={event_id} не найдено")
+
+            # Удаляем событие из таблицы events
+            await self.session.execute(
+                delete(Event).where(Event.id == event_id)
+            )
+
+            # Находим всех участников группы
+            stmt = select(GroupMember).where(GroupMember.group_id == event.group_id)
+            result = await self.session.execute(stmt)
+            members = result.scalars().all()
+
+            # Удаляем данные об очереди из notification_settings
+            for member in members:
+                stmt = select(User).where(User.telegram_id == member.user_id)
+                result = await self.session.execute(stmt)
+                user = result.scalar_one_or_none()
+                if user and user.notification_settings and str(event_id) in user.notification_settings:
+                    notification_settings = user.notification_settings.copy()
+                    del notification_settings[str(event_id)]
+                    await self.session.execute(
+                        update(User)
+                        .where(User.telegram_id == user.telegram_id)
+                        .values(notification_settings=notification_settings)
+                    )
+
+            # Фиксируем изменения
+            await self.session.commit()
+            logger.info(f"Событие event_id={event_id} успешно удалено вместе с очередью")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении события {event_id}: {e}", exc_info=True)
+            await self.session.rollback()
+            raise

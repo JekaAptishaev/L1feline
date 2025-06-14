@@ -38,7 +38,7 @@ async def main() -> None:
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    dp.update.middleware(DbSessionMiddleware(session_pool=session_maker))
+    dp.update.middleware(DbSessionMiddleware(session_pool=session_maker, bot=bot))
     dp.include_router(group_member.router)
     dp.include_router(common.router)
     dp.include_router(group_leader.router)

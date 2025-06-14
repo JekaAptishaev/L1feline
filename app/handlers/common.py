@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.repository import UserRepo, GroupRepo
-from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader, get_regular_member_menu, get_assistant_menu
+from app.keyboards.reply import get_main_menu_unregistered, get_main_menu_leader, get_regular_member_menu, get_assistant_menu, get_skip_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -30,8 +30,8 @@ async def cmd_start(message: Message, user_repo: UserRepo, state: FSMContext):
         user = await user_repo.get_or_create_user(
             telegram_id=message.from_user.id,
             username=message.from_user.username or "",
-            first_name= None,
-            last_name= None
+            first_name=None,
+            last_name=None
         )
         await state.clear()
 
@@ -93,18 +93,64 @@ async def process_first_name(message: Message, state: FSMContext, user_repo: Use
 
         await state.update_data(first_name=first_name)
         await state.set_state(RegisterUser.waiting_for_middle_name)
-        await message.answer("Введите ваше отчество (или отправьте 'Пропустить', если его нет):")
+        await message.answer(
+            "Введите ваше отчество или нажмите 'Пропустить', если его нет:",
+            reply_markup=get_skip_keyboard()
+        )
     except Exception as e:
         logger.error(f"Ошибка в process_first_name: {e}")
+        await state.clear()
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+@router.message(RegisterUser.waiting_for_middle_name, F.text == "Пропустить")
+async def skip_middle_name(message: Message, state: FSMContext, user_repo: UserRepo):
+    try:
+        data = await state.get_data()
+        last_name = data.get("last_name")
+        first_name = data.get("first_name")
+
+        # Проверяем уникальность ФИО
+        full_name_exists = await user_repo.check_full_name_exists(
+            last_name=last_name,
+            first_name=first_name,
+            middle_name=None
+        )
+        if full_name_exists:
+            await message.answer(
+                f"Пользователь с ФИО {last_name} {first_name} уже существует. "
+                "Пожалуйста, введите другую фамилию."
+            )
+            await state.set_state(RegisterUser.waiting_for_last_name)
+            return
+
+        # Обновляем данные пользователя в базе
+        await user_repo.update_user(
+            telegram_id=message.from_user.id,
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=None,
+            username=message.from_user.username or ""
+        )
+
+        await state.clear()
+        await message.answer(
+            f"Регистрация завершена! Добро пожаловать, {first_name}! Вы пока не состоите в группе.",
+            reply_markup=get_main_menu_unregistered()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в skip_middle_name: {e}")
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.message(RegisterUser.waiting_for_middle_name)
 async def process_middle_name(message: Message, state: FSMContext, user_repo: UserRepo):
     try:
-        middle_name = message.text.strip() if message.text.strip().lower() != "пропустить" else None
-        if middle_name and (len(middle_name) < 2 or len(middle_name) > 50):
-            await message.answer("Отчество должно быть от 2 до 50 символов или 'Пропустить'. Попробуйте снова.")
+        middle_name = message.text.strip()
+        if len(middle_name) < 2 or len(middle_name) > 50:
+            await message.answer(
+                "Отчество должно быть от 2 до 50 символов. Попробуйте снова или нажмите 'Пропустить':",
+                reply_markup=get_skip_keyboard()
+            )
             return
 
         data = await state.get_data()
@@ -119,7 +165,7 @@ async def process_middle_name(message: Message, state: FSMContext, user_repo: Us
         )
         if full_name_exists:
             await message.answer(
-                f"Пользователь с ФИО {last_name} {first_name} {middle_name or ''} уже существует. "
+                f"Пользователь с ФИО {last_name} {first_name} {middle_name} уже существует. "
                 "Пожалуйста, введите другую фамилию."
             )
             await state.set_state(RegisterUser.waiting_for_last_name)

@@ -291,6 +291,12 @@ async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo, u
             await callback.answer()
             return
 
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
+            await callback.message.edit_text("Вы не состоите в группе.")
+            await callback.answer()
+            return
+
         queue_data = await user_repo.get_queue_entries(event_id)
         has_queue = bool(queue_data and "max_slots" in queue_data)
         is_in_queue = False
@@ -302,6 +308,9 @@ async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo, u
 
         data = await state.get_data()
         show_view_queue = data.get(f"show_view_queue_{event_id}", True)
+
+        # Проверяем, является ли пользователь старостой или ассистентом
+        can_delete = user.group_membership.is_leader or user.group_membership.is_assistant
 
         day = event.date.strftime("%d").lstrip("0")
         month = MONTHS_RU[event.date.month]
@@ -319,7 +328,7 @@ async def handle_event_details(callback: CallbackQuery, group_repo: GroupRepo, u
         if has_queue:
             details += f"\nОчередь: {len(queue_data.get('entries', {}))}/{queue_data['max_slots']} мест занято"
 
-        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue, show_view_queue)
+        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue, show_view_queue, can_delete=can_delete)
         await callback.message.edit_text(details, reply_markup=keyboard)
         await callback.answer()
     except Exception as e:
@@ -338,11 +347,19 @@ async def join_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: G
 
         success, message, is_in_queue = await user_repo.join_queue(event_id, user.telegram_id)
         event = await group_repo.get_event_by_id(event_id)
+        if not event:
+            await callback.message.edit_text("Событие не найдено.")
+            await callback.answer()
+            return
+
         queue_data = await user_repo.get_queue_entries(event_id)
         has_queue = bool(queue_data and "max_slots" in queue_data)
 
         data = await state.get_data()
         show_view_queue = data.get(f"show_view_queue_{event_id}", True)
+
+        # Проверяем, является ли пользователь старостой или ассистентом
+        can_delete = user.group_membership.is_leader or user.group_membership.is_assistant
 
         day = event.date.strftime("%d").lstrip("0")
         month = MONTHS_RU[event.date.month]
@@ -360,7 +377,7 @@ async def join_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: G
         if has_queue:
             details += f"\nОчередь: {len(queue_data.get('entries', {}))}/{queue_data['max_slots']} мест занято"
 
-        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue or success, show_view_queue)
+        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue or success, show_view_queue, can_delete=can_delete)
         await callback.message.edit_text(details, reply_markup=keyboard)
         await callback.answer(message, show_alert=True)
     except Exception as e:
@@ -379,6 +396,11 @@ async def leave_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: 
 
         success, message = await user_repo.leave_queue(event_id, user.telegram_id)
         event = await group_repo.get_event_by_id(event_id)
+        if not event:
+            await callback.message.edit_text("Событие не найдено.")
+            await callback.answer()
+            return
+
         queue_data = await user_repo.get_queue_entries(event_id)
         has_queue = bool(queue_data and "max_slots" in queue_data)
         is_in_queue = False
@@ -386,6 +408,9 @@ async def leave_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: 
         # Сбрасываем состояние show_view_queue для данного события
         await state.update_data(**{f"show_view_queue_{event_id}": True})
         show_view_queue = True
+
+        # Проверяем, является ли пользователь старостой или ассистентом
+        can_delete = user.group_membership.is_leader or user.group_membership.is_assistant
 
         day = event.date.strftime("%d").lstrip("0")
         month = MONTHS_RU[event.date.month]
@@ -403,7 +428,7 @@ async def leave_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: 
         if has_queue:
             details += f"\nОчередь: {len(queue_data.get('entries', {}))}/{queue_data['max_slots']} мест занято"
 
-        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue, show_view_queue)
+        keyboard = get_event_details_keyboard(event_id, has_queue, is_in_queue, show_view_queue, can_delete=can_delete)
         await callback.message.edit_text(details, reply_markup=keyboard)
         await callback.answer(message, show_alert=True)
     except Exception as e:
@@ -454,13 +479,63 @@ async def view_queue(callback: CallbackQuery, user_repo: UserRepo, group_repo: G
                 is_in_queue = True
                 break
 
+        # Проверяем, является ли пользователь старостой или ассистентом
+        can_delete = user.group_membership.is_leader or user.group_membership.is_assistant
+
         await state.update_data(**{f"show_view_queue_{event_id}": False})
         await callback.message.edit_text(
             response,
-            reply_markup=get_event_details_keyboard(event_id, True, is_in_queue, show_view_queue=False)
+            reply_markup=get_event_details_keyboard(event_id, True, is_in_queue, show_view_queue=False, can_delete=can_delete)
         )
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в view_queue: {e}")
         await callback.message.edit_text("Произошла ошибка при просмотре очереди.")
         await callback.answer("Произошла ошибка.", show_alert=True)
+
+@router.callback_query(F.data.startswith("delete_event_"))
+async def delete_event(callback: CallbackQuery, user_repo: UserRepo, group_repo: GroupRepo, state: FSMContext):
+    try:
+        event_id = callback.data.replace("delete_event_", "")
+        event = await group_repo.get_event_by_id(event_id)
+        if not event:
+            await callback.message.edit_text("Событие не найдено.")
+            await callback.answer()
+            return
+
+        user = await user_repo.get_user_with_group_info(callback.from_user.id)
+        if not user or not user.group_membership:
+            await callback.message.edit_text("Вы не состоите в группе.")
+            await callback.answer()
+            return
+
+        # Проверяем, является ли пользователь старостой или ассистентом
+        if not (user.group_membership.is_leader or user.group_membership.is_assistant):
+            await callback.message.edit_text("У вас нет прав для удаления события.")
+            await callback.answer()
+            return
+
+        # Удаляем событие
+        await group_repo.delete_event(event_id)
+
+        # Возвращаем пользователя к календарю
+        data = await state.get_data()
+        week_offset = data.get("week_offset", 0)
+        group = user.group_membership.group
+        start_of_week, end_of_week = get_week_dates(week_offset)
+        events = await group_repo.get_group_events(group.id)
+        week_events = [event for event in events if start_of_week <= event.date <= end_of_week]
+        
+        start_day = start_of_week.strftime("%d").lstrip("0")
+        start_month = MONTHS_RU[start_of_week.month]
+        end_day = end_of_week.strftime("%d").lstrip("0")
+        end_month = MONTHS_RU[end_of_week.month]
+        keyboard = get_weekly_calendar_keyboard(week_events, start_of_week, week_offset=week_offset)
+        await callback.message.edit_text(
+            f"Событие «{event.title}» удалено.\nНеделя с {start_day} {start_month} по {end_day} {end_month}",
+            reply_markup=keyboard
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в delete_event: {e}")
+        await callback.answer("Произошла ошибка при удалении события.", show_alert=True)
