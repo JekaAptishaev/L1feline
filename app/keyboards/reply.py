@@ -42,7 +42,7 @@ def get_regular_member_menu() -> ReplyKeyboardMarkup:
         resize_keyboard=True
     )
 
-def get_event_details_keyboard(event_id: str, has_queue: bool, is_in_queue: bool, show_view_queue: bool = True) -> InlineKeyboardMarkup:
+def get_event_details_keyboard(event_id: str, has_queue: bool, is_in_queue: bool, show_view_queue: bool = True, can_delete: bool = False) -> InlineKeyboardMarkup:
     inline_keyboard = []
     if has_queue:
         queue_buttons = []
@@ -53,5 +53,17 @@ def get_event_details_keyboard(event_id: str, has_queue: bool, is_in_queue: bool
         if show_view_queue:
             queue_buttons.append(InlineKeyboardButton(text="Посмотреть очередь", callback_data=f"view_queue_{event_id}"))
         inline_keyboard.append(queue_buttons)
-    inline_keyboard.append([InlineKeyboardButton(text="Назад к неделе", callback_data="week_0")])
+    nav_buttons = [InlineKeyboardButton(text="Назад к неделе", callback_data="week_0")]
+    if can_delete:
+        nav_buttons.append(InlineKeyboardButton(text="Удалить событие", callback_data=f"delete_event_{event_id}"))
+    inline_keyboard.append(nav_buttons)
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+def get_skip_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Пропустить")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
