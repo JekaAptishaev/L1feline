@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class TopicListStates(StatesGroup):
     waiting_for_topic_title = State()
     waiting_for_topic_description = State()
-    waiting_for_description_text = State()  # Новое состояние для ввода текста описания
+    waiting_for_description_text = State()
     waiting_for_delete_topic = State()
 
 def get_topic_list_keyboard():
@@ -33,12 +33,15 @@ def get_back_keyboard():
 def format_topics(topics):
     if not topics:
         return "Пусто\n"
-    return "\n".join(f"{i+1}. {topic['title']}" for i, topic in enumerate(topics))
+    return "\n".join(
+        f"{i+1}. {topic['title']}{' [описание]' if topic['description'] else ''}"
+        for i, topic in enumerate(topics)
+    )
 
 @router.callback_query(F.data == "add_topics")
 async def start_add_topics(callback: CallbackQuery, state: FSMContext):
     logger.info(f"Начало добавления тем для user_id={callback.from_user.id}")
-    await state.clear()
+    # Не очищаем всё состояние, только инициализируем topic_list_data
     await state.update_data(topic_list_data={"topics": []})
     await callback.message.delete()
     sent_msg = await callback.message.answer(
@@ -178,19 +181,22 @@ async def back_to_topics(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "back_to_event", TopicListStates.waiting_for_topic_title)
 async def cancel_topic_list(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Отмена добавления тем для user_id={callback.from_user.id}")
+    # Сбрасываем только данные тем, сохраняя остальные поля
+    await state.update_data(topic_list_data={"topics": []})
     await callback.message.delete()
-    await state.clear()
     from .group_assistant import show_topics_and_queues_menu
     await show_topics_and_queues_menu(callback, state)
 
 @router.callback_query(F.data == "finish_topics", TopicListStates.waiting_for_topic_title)
 async def finish_topic_list(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Завершение добавления тем для user_id={callback.from_user.id}")
     data = await state.get_data()
     topics = data["topic_list_data"]["topics"]
     if not topics:
         await callback.answer("Добавьте хотя бы одну тему.", show_alert=True)
         return
-    await callback.message.delete()
     await state.update_data(topic_list_data={"topics": topics})
     from .group_assistant import show_topics_and_queues_menu
     await show_topics_and_queues_menu(callback, state)
+    logger.info(f"Темы сохранены: {len(topics)} тем")

@@ -53,6 +53,8 @@ def get_create_event_keyboard(data: dict) -> InlineKeyboardBuilder:
     # Первый ряд: Предмет, Название
     subject_text = data.get("subject", "Предмет")
     title_text = data.get("title", "Название")
+    if data.get("description"):  # Добавляем "[описание]", если описание заполнено
+        title_text += " [описание]"
     keyboard.button(text=subject_text, callback_data="edit_subject")
     keyboard.button(text=title_text, callback_data="edit_title")
     # Второй ряд: Описание, Дата
@@ -606,12 +608,15 @@ async def show_topics_and_queues_menu(callback: CallbackQuery, state: FSMContext
         topics_count = len(topic_list_data["topics"])
         keyboard = get_topics_and_queues_keyboard(topics_count)
         warning_text = "\nНажатие на кнопку 'Добавить очередь' сотрёт все темы." if topics_count > 0 else ""
-        await callback.message.edit_text(
-            f"{topics_count} Тем{warning_text}" if topics_count > 0 else "Темы и очереди",
-            reply_markup=keyboard.as_markup()
-        )
+        text = f"{topics_count} Тем{warning_text}" if topics_count > 0 else "Темы и очереди"
+        # Проверяем, существует ли сообщение для редактирования
+        try:
+            await callback.message.edit_text(text, reply_markup=keyboard.as_markup())
+        except Exception as e:
+            logger.warning(f"Не удалось отредактировать сообщение: {e}. Отправляем новое сообщение.")
+            await callback.message.answer(text, reply_markup=keyboard.as_markup())
         await callback.answer()
     except Exception as e:
-        logger.error(f"Ошибка в show_topics_and_queues_menu: {e}")
+        logger.error(f"Ошибка в show_topics_and_queues_menu: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка. Попробуйте позже.")
         await callback.answer()
