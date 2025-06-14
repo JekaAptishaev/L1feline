@@ -5,107 +5,907 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lifeline</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #1a1a1a;
-            color: #fff;
+        :root {
+            --primary: #6B46C1;
+            --primary-light: #E9D8FD;
+            --secondary: #ED64A6;
+            --text: #2D3748;
+            --text-light: #718096;
+            --bg: #F7FAFC;
+            --highlight: #EDF2F7;
+            --danger: #E53E3E;
+            --toggle-purple: #6B46C1;
+            --event-green: #4CAF50;
+            --event-green-light: #C8E6C9;
+        }
+
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #F7FAFC, #E6E9F2);
             display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            flex-direction: column;
+            min-height: 100vh;
+            width: 100%;
+            padding: 0;
+            overflow-x: hidden;
         }
+
         .container {
-            background-color: #333;
-            border-radius: 10px;
-            padding: 20px;
-            width: 300px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            height: 100vh;
+            background: var(--white);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
+
         .header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #FFFFFF;
+            padding: 20px;
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            position: relative;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header::after {
+            content: "";
+            position: absolute;
+            bottom: -30px;
+            right: -30px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            opacity: 0.7;
+        }
+
+        .content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .auth-section .icon,
+        .group-section .icon {
+            font-size: 30px;
+            color: var(--text-light);
+            margin-bottom: 20px;
+        }
+
+        .auth-section h2,
+        .group-section h2 {
+            font-size: 24px;
+            color: var(--text);
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .auth-section input,
+        .group-section input {
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 2px solid var(--primary-light);
+            border-radius: 12px;
+            font-size: 16px;
+            color: var(--text);
+            background-color: var(--white);
+            outline: none;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .auth-section input:focus,
+        .group-section input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(107, 70, 193, 0.2);
+        }
+
+        .auth-section button,
+        .group-section button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #FFFFFF;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .auth-section button:hover,
+        .group-section button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(107, 70, 193, 0.3);
+        }
+
+        .group-section .options {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .group-section .options button {
+            width: 48%;
+            padding: 12px;
+        }
+
+        .group-section .form-group {
+            display: none;
+        }
+
+        .group-section .form-group.active {
+            display: block;
+        }
+
+        .participants-section h2,
+        .calendar-section h2,
+        .profile-section h2,
+        .events-section h2 {
+            font-size: 22px;
+            color: var(--primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+        }
+
+        .participants-section h2 svg,
+        .calendar-section h2 svg,
+        .profile-section h2 svg,
+        .events-section h2 svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .participants-section .participant {
+            padding: 16px;
+            background: var(--white);
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 16px;
+            color: var(--text);
+            position: relative;
+            transition: background-color 0.3s ease;
+            cursor: pointer;
+        }
+
+        .participants-section .participant:hover {
+            background-color: var(--highlight);
+        }
+
+        .participants-section .participant .role {
+            content: " - Староста";
+            color: var(--toggle-purple);
+            font-weight: 500;
+        }
+
+        .participants-section .section-actions {
+            display: none;
+            margin-top: 10px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .participants-section .participant.active .section-actions {
+            display: flex;
+        }
+
+        .participants-section .action-btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.3s ease;
+            background-color: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .participants-section .action-btn:hover {
+            background-color: var(--primary);
+            color: #FFFFFF;
+            transform: translateY(-1px);
+        }
+
+        .calendar-section .calendar {
+            padding: 16px;
+            background: var(--white);
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 16px;
+            color: var(--text);
+            text-align: left;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .calendar-section .week-selector {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .calendar-section .week-selector button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #FFFFFF;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .calendar-section .week-selector button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(107, 70, 193, 0.3);
+        }
+
+        .calendar-section .week-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: var(--white);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+            min-width: 200px;
+            margin-top: 5px;
+        }
+
+        .calendar-section .week-dropdown.active {
+            display: block;
+        }
+
+        .calendar-section .week-dropdown button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            background: none;
+            text-align: left;
+            font-size: 14px;
+            color: var(--text);
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .calendar-section .week-dropdown button:hover {
+            background-color: var(--primary-light);
+        }
+
+        .calendar-section .schedule {
+            margin-top: 20px;
+        }
+
+        .calendar-section .day {
+            margin-bottom: 15px;
+        }
+
+        .calendar-section .day h3 {
+            font-size: 18px;
+            color: var(--text);
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .calendar-section .day .event {
+            padding: 10px;
+            background: var(--primary-light);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        .profile-section .profile-info p {
+            margin-bottom: 16px;
+            font-size: 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            padding: 10px;
+            background: var(--white);
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         }
-        .header h2 {
-            margin: 0;
+
+        .profile-section .profile-info .label {
+            font-weight: 600;
+            color: var(--text);
         }
-        .form-group {
-            margin-bottom: 15px;
+
+        .profile-section .profile-info .value {
+            color: var(--text-light);
         }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
+
+        .profile-section .notification-settings {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--white), #F9FAFC);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         }
-        .form-group input {
+
+        .profile-section .notification-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--white);
+            border-radius: 8px;
+            transition: background-color 0.3s ease;
+        }
+
+        .profile-section .notification-toggle:hover {
+            background-color: var(--primary-light);
+        }
+
+        .profile-section .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .profile-section .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .profile-section .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #CBD5E0;
+            transition: 0.4s;
+            border-radius: 12px;
+        }
+
+        .profile-section .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #FFFFFF;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        .profile-section input:checked + .slider {
+            background-color: var(--toggle-purple);
+        }
+
+        .profile-section input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .profile-section .exit-button {
             width: 100%;
-            padding: 8px;
+            padding: 15px;
             border: none;
-            border-radius: 5px;
-            background-color: #666;
-            color: #fff;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #FFFFFF;
+            background-color: var(--danger);
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-top: 20px;
         }
-        .form-group input:focus {
-            outline: none;
-            background-color: #555;
+
+        .profile-section .exit-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
         }
-        .btn {
-            background-color: #007bff;
-            color: #fff;
+
+        .events-section .event {
+            padding: 16px;
+            background: var(--white);
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 16px;
+            color: var(--text);
+            text-align: left;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .events-section .create-event-btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #FFFFFF;
+            background: var(--event-green);
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        .events-section .create-event-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+        }
+
+        .events-section .event-menu {
+            display: none;
+            background: var(--event-green-light);
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .events-section .event-menu.active {
+            display: grid;
+        }
+
+        .events-section .event-menu .menu-button {
             padding: 10px;
             border: none;
-            border-radius: 5px;
-            width: 100%;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #FFFFFF;
+            background: var(--event-green);
             cursor: pointer;
+            transition: background-color 0.3s ease;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
         }
-        .btn:hover {
-            background-color: #0056b3;
+
+        .events-section .event-menu .menu-button:hover {
+            background-color: #388E3C;
         }
-        .id {
-            color: #ccc;
-            font-size: 0.9em;
-            margin-bottom: 15px;
+
+        .events-section .event-menu .full-width {
+            grid-column: 1 / -1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #FFFFFF;
+            background: var(--event-green);
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
         }
+
+        .events-section .event-menu .full-width:hover {
+            background-color: #388E3C;
+        }
+
         .nav {
             display: flex;
             justify-content: space-around;
-            background-color: #2c3e50;
-            padding: 10px;
-            border-radius: 5px;
+            background: var(--white);
+            padding: 12px 0;
+            border-top: 1px solid #E2E8F0;
             position: fixed;
-            bottom: 20px;
-            width: 300px;
+            bottom: 0;
+            width: 100%;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
         }
-        .nav button {
-            background: none;
+
+        .nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 25%;
+            padding: 8px;
             border: none;
-            color: #fff;
+            background: none;
+            font-size: 12px;
+            color: var(--text-light);
             cursor: pointer;
+            transition: color 0.3s ease, transform 0.3s ease;
+            gap: 4px;
+        }
+
+        .nav-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .nav-btn.active {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .nav-btn:hover {
+            color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 480px) {
+            .header {
+                font-size: 22px;
+                padding: 16px;
+            }
+            .header::after {
+                bottom: -20px;
+                right: -20px;
+                width: 60px;
+                height: 60px;
+            }
+            .content {
+                padding: 16px;
+            }
+            .auth-section h2, .group-section h2,
+            .participants-section h2, .calendar-section h2, .profile-section h2, .events-section h2 {
+                font-size: 20px;
+            }
+            .auth-section input, .group-section input,
+            .auth-section button, .group-section button {
+                font-size: 14px;
+                padding: 12px;
+            }
+            .participants-section .participant,
+            .calendar-section .calendar,
+            .profile-section .profile-info p,
+            .events-section .event {
+                font-size: 14px;
+            }
+            .nav-btn {
+                font-size: 10px;
+            }
+            .nav-btn svg {
+                width: 18px;
+                height: 18px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h2>Lifeline</h2>
-            <span>▼</span>
+            Lifeline
         </div>
-        <div class="form-group">
-            <label>Авторизация</label>
-            <input type="text" placeholder="ФИО">
-            <input type="text" placeholder="Вступить в группу">
-            <input type="text" placeholder="ИИИ">
-            <button class="btn">Создать группу</button>
-            <div class="id">id: @fe02923ru8</div>
-            <button class="btn">Принять</button>
+        <div class="content">
+            <div id="auth-section" class="section active">
+                <div class="auth-section">
+                    <div class="icon">🔒</div>
+                    <h2>Авторизация</h2>
+                    <input type="text" id="fio-input" placeholder="Введите ваше полное имя">
+                    <button onclick="handleAuth()">Подтвердить</button>
+                </div>
+            </div>
+
+            <div id="group-section" class="section">
+                <div class="group-section">
+                    <div class="icon">👥</div>
+                    <h2>Группы</h2>
+                    <div class="options">
+                        <button onclick="showCreateGroup()">Создать группу</button>
+                        <button onclick="showJoinGroup()">Присоединиться по ключу</button>
+                    </div>
+                    <div id="create-group" class="form-group">
+                        <input type="text" id="group-name" placeholder="Введите название группы">
+                        <button onclick="handleCreateGroup()">Создать</button>
+                    </div>
+                    <div id="join-group" class="form-group">
+                        <input type="text" id="group-id" placeholder="Введите ID группы">
+                        <button onclick="handleJoinGroup()">Принять</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="participants-section" class="section">
+                <div class="participants-section">
+                    <h2><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg> Участники</h2>
+                    <div class="participant" onclick="toggleActions(this)">
+                        <span>Иванов Иван Иванович - Староста</span>
+                        <span class="role"></span>
+                        <div class="section-actions">
+                            <button class="action-btn" onclick="removeParticipant(1); event.stopPropagation()">Удалить</button>
+                            <button class="action-btn" onclick="removeAssistant(1); event.stopPropagation()" disabled>Удалить ассистента</button>
+                            <button class="action-btn" onclick="makeAssistant(1); event.stopPropagation()" disabled>Сделать ассистентом</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="calendar-section" class="section">
+                <div class="calendar-section">
+                    <h2><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> Календарь</h2>
+                    <div class="calendar">
+                        <div class="week-selector">
+                            <button id="week-select-btn" onclick="toggleWeekDropdown()">Выбрать неделю</button>
+                            <div class="week-dropdown" id="week-dropdown">
+                                <button onclick="selectWeek('02-09 June 2025')">Неделя 02-09 Июнь 2025</button>
+                                <button onclick="selectWeek('09-16 June 2025')">Неделя 09-16 Июнь 2025</button>
+                                <button onclick="selectWeek('16-23 June 2025')">Неделя 16-23 Июнь 2025</button>
+                            </div>
+                        </div>
+                        <div class="schedule" id="schedule">
+                            <!-- Schedule will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="profile-section" class="section">
+                <div class="profile-section">
+                    <h2><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Профиль</h2>
+                    <div class="profile-info">
+                        <p><span class="label">ФИО:</span> <span class="value">Иванов Иван Иванович</span></p>
+                        <p><span class="label">Группа:</span> <span class="value">ПИ-241</span></p>
+                        <p><span class="label">Роль:</span> <span class="value">Староста</span></p>
+                        <p><span class="label">Староста группы:</span> <span class="value">Иванов Иван Иванович</span></p>
+                    </div>
+                    <div class="notification-settings">
+                        <div class="notification-toggle">
+                            <span>Уведомления о событиях</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <button class="exit-button" onclick="exitGroup()">Выйти из группы</button>
+                </div>
+            </div>
+
+            <div id="events-section" class="section">
+                <div class="events-section">
+                    <h2><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> События</h2>
+                    <div class="event">
+                        События будут добавлены позже
+                    </div>
+                    <button class="create-event-btn" id="create-event-btn" onclick="toggleEventMenu()">Создать событие</button>
+                    <div class="event-menu" id="event-menu">
+                        <button class="menu-button">Предмет</button>
+                        <button class="menu-button">Название</button>
+                        <button class="menu-button">Описание</button>
+                        <button class="menu-button">Важное: Нет</button>
+                        <button class="menu-button">Темы и очереди</button>
+                        <button class="menu-button">Дата</button>
+                        <button class="full-width" onclick="cancelEvent()">Отмена</button>
+                        <button class="full-width" onclick="saveEvent()">Готово</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="nav">
+            <button class="nav-btn" id="participants-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                Участники
+            </button>
+            <button class="nav-btn" id="calendar-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                Календарь
+            </button>
+            <button class="nav-btn" id="events-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                События
+            </button>
+            <button class="nav-btn" id="profile-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Профиль
+            </button>
         </div>
     </div>
-    <div class="nav">
-        <button><span>☰</span></button>
-        <button><span>📅</span></button>
-        <button><span>👥</span></button>
-    </div>
+
+    <script>
+        let currentSection = 'auth-section';
+
+        function showSection(sectionId) {
+            document.getElementById(currentSection).classList.remove('active');
+            document.getElementById(sectionId).classList.add('active');
+            currentSection = sectionId;
+        }
+
+        function handleAuth() {
+            const fioInput = document.getElementById('fio-input').value.trim();
+            if (fioInput === 'Иванов Иван Иванович') {
+                showSection('group-section');
+            } else {
+                alert('Пожалуйста, введите: Иванов Иван Иванович');
+            }
+        }
+
+        function showCreateGroup() {
+            document.getElementById('create-group').classList.add('active');
+            document.getElementById('join-group').classList.remove('active');
+        }
+
+        function showJoinGroup() {
+            document.getElementById('join-group').classList.add('active');
+            document.getElementById('create-group').classList.remove('active');
+        }
+
+        function handleCreateGroup() {
+            const groupName = document.getElementById('group-name').value.trim();
+            if (groupName) {
+                showSection('participants-section');
+            } else {
+                alert('Пожалуйста, введите название группы');
+            }
+        }
+
+        function handleJoinGroup() {
+            const groupId = document.getElementById('group-id').value.trim();
+            if (groupId) {
+                showSection('participants-section');
+            } else {
+                alert('Пожалуйста, введите ID группы');
+            }
+        }
+
+        function toggleActions(element) {
+            const participant = element;
+            const actions = participant.querySelector('.section-actions');
+            const allParticipants = document.querySelectorAll('.participant');
+            
+            allParticipants.forEach(p => p.classList.remove('active'));
+            participant.classList.add('active');
+        }
+
+        function exitGroup() {
+            console.log('Выйти из группы');
+            showSection('auth-section');
+        }
+
+        document.getElementById('participants-btn').addEventListener('click', () => showSection('participants-section'));
+        document.getElementById('calendar-btn').addEventListener('click', () => showSection('calendar-section'));
+        document.getElementById('profile-btn').addEventListener('click', () => showSection('profile-section'));
+        document.getElementById('events-btn').addEventListener('click', () => showSection('events-section'));
+
+        function removeParticipant(id) {
+            console.log(`Удалить участника с ID ${id}`);
+            const participant = document.querySelector('.participant.active');
+            if (participant) participant.classList.remove('active');
+        }
+
+        function makeAssistant(id) {
+            console.log(`Сделать ассистентом участника с ID ${id}`);
+            const participant = document.querySelector('.participant.active');
+            if (participant) participant.classList.remove('active');
+        }
+
+        function removeAssistant(id) {
+            console.log(`Удалить ассистента с ID ${id}`);
+            const participant = document.querySelector('.participant.active');
+            if (participant) participant.classList.remove('active');
+        }
+
+        let currentWeek = '02-09 June 2025';
+
+        function toggleWeekDropdown() {
+            const dropdown = document.getElementById('week-dropdown');
+            dropdown.classList.toggle('active');
+        }
+
+        function selectWeek(week) {
+            currentWeek = week;
+            const dropdown = document.getElementById('week-dropdown');
+            dropdown.classList.remove('active');
+            updateCalendar();
+        }
+
+        function updateCalendar() {
+            const schedule = document.getElementById('schedule');
+            schedule.innerHTML = '';
+
+            const weeks = {
+                '02-09 June 2025': {
+                    'Понедельник': ['Событие 1', 'Событие 2'],
+                    'Вторник': ['Событие 3'],
+                    'Среда': [],
+                    'Четверг': [],
+                    'Пятница': [],
+                    'Суббота': [],
+                    'Воскресенье': []
+                },
+                '09-16 June 2025': {
+                    'Понедельник': ['Событие 4'],
+                    'Вторник': ['Событие 5', 'Событие 6'],
+                    'Среда': [],
+                    'Четверг': [],
+                    'Пятница': [],
+                    'Суббота': [],
+                    'Воскресенье': []
+                },
+                '16-23 June 2025': {
+                    'Понедельник': [],
+                    'Вторник': ['Событие 7'],
+                    'Среда': ['Событие 8'],
+                    'Четверг': [],
+                    'Пятница': [],
+                    'Суббота': [],
+                    'Воскресенье': []
+                }
+            };
+
+            const days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+            const events = weeks[currentWeek] || {};
+
+            days.forEach(day => {
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'day';
+                dayDiv.innerHTML = `<h3>${day}</h3>`;
+                if (events[day] && events[day].length > 0) {
+                    const eventList = document.createElement('div');
+                    events[day].forEach(event => {
+                        const eventItem = document.createElement('div');
+                        eventItem.className = 'event';
+                        eventItem.textContent = event;
+                        eventList.appendChild(eventItem);
+                    });
+                    dayDiv.appendChild(eventList);
+                }
+                schedule.appendChild(dayDiv);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateCalendar();
+        });
+
+        document.addEventListener('click', (event) => {
+            const dropdown = document.getElementById('week-dropdown');
+            const button = document.getElementById('week-select-btn');
+            if (!button.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        function toggleEventMenu() {
+            const menu = document.getElementById('event-menu');
+            menu.classList.toggle('active');
+        }
+
+        function cancelEvent() {
+            const menu = document.getElementById('event-menu');
+            menu.classList.remove('active');
+        }
+
+        function saveEvent() {
+            console.log('Событие сохранено');
+            const menu = document.getElementById('event-menu');
+            menu.classList.remove('active');
+        }
+    </script>
 </body>
 </html>
