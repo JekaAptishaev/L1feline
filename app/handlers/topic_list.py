@@ -40,17 +40,20 @@ def format_topics(topics):
 
 @router.callback_query(F.data == "add_topics")
 async def start_add_topics(callback: CallbackQuery, state: FSMContext):
-    logger.info(f"Начало добавления тем для user_id={callback.from_user.id}")
-    # Не очищаем всё состояние, только инициализируем topic_list_data
-    await state.update_data(topic_list_data={"topics": []})
+    logger.info(f"Начало добавления/редактирования тем для user_id={callback.from_user.id}")
+    # Получаем существующие данные
+    data = await state.get_data()
+    # Используем существующие темы или инициализируем пустой список
+    topic_list_data = data.get("topic_list_data", {"topics": []})
+    await state.update_data(topic_list_data=topic_list_data)
     await callback.message.delete()
     sent_msg = await callback.message.answer(
-        text="Темы:\nПусто\nВведите название темы в сообщении",
+        text=f"Темы:\n{format_topics(topic_list_data['topics'])}\nВведите название темы в сообщении",
         reply_markup=get_topic_list_keyboard()
     )
     await state.update_data(last_message_id=sent_msg.message_id)
     await state.set_state(TopicListStates.waiting_for_topic_title)
-    logger.info(f"Сообщение отправлено, last_message_id={sent_msg.message_id}")
+    logger.info(f"Сообщение отправлено, last_message_id={sent_msg.message_id}, topics_count={len(topic_list_data['topics'])}")
 
 @router.message(TopicListStates.waiting_for_topic_title, F.text)
 async def add_topic_title(message: Message, state: FSMContext):

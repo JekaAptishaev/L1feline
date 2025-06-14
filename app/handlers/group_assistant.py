@@ -151,8 +151,17 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
 
         tomorrow = datetime.now() + timedelta(days=1)
         await state.set_state(CreateEvent.main_menu)
-        await state.update_data(is_important=False, date=tomorrow.strftime("%Y-%m-%d"), date_changed=False)
-        keyboard = get_create_event_keyboard({"date": tomorrow.strftime("%Y-%m-%d"), "date_changed": False})
+        await state.update_data(
+            is_important=False,
+            date=tomorrow.strftime("%Y-%m-%d"),
+            date_changed=False,
+            topic_list_data={"topics": []}  # Инициализируем пустой список тем
+        )
+        keyboard = get_create_event_keyboard({
+            "date": tomorrow.strftime("%Y-%m-%d"),
+            "date_changed": False,
+            "topic_list_data": {"topics": []}
+        })
         await message.answer("Создание события", reply_markup=keyboard.as_markup())
     except Exception as e:
         logger.error(f"Ошибка в start_create_event: {e}")
@@ -504,10 +513,16 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
 
         # Проверка обязательных полей
         if not title or not date_str:
+            tomorrow = datetime.now() + timedelta(days=1)
+            await state.update_data(
+                date=tomorrow.strftime("%Y-%m-%d"),
+                date_changed=False
+            )
             await callback.message.edit_text(
                 "Не заполнены обязательные поля: Название и Дата.",
-                reply_markup=get_back_keyboard().as_markup()
+                reply_markup=get_create_event_keyboard(data).as_markup()
             )
+            await state.set_state(CreateEvent.main_menu)
             await callback.answer()
             return
 
@@ -515,10 +530,16 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
         try:
             date = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
+            tomorrow = datetime.now() + timedelta(days=1)
+            await state.update_data(
+                date=tomorrow.strftime("%Y-%m-%d"),
+                date_changed=False
+            )
             await callback.message.edit_text(
                 "Неверный формат даты. Пожалуйста, исправьте дату.",
-                reply_markup=get_back_keyboard().as_markup()
+                reply_markup=get_create_event_keyboard(data).as_markup()
             )
+            await state.set_state(CreateEvent.main_menu)
             await callback.answer()
             return
 
@@ -585,20 +606,31 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
             await callback.message.answer(success_message, reply_markup=reply_markup)
             logger.info(f"Событие создано: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
         else:
+            tomorrow = datetime.now() + timedelta(days=1)
+            await state.update_data(
+                date=tomorrow.strftime("%Y-%m-%d"),
+                date_changed=False
+            )
             await callback.message.edit_text(
                 "Не удалось создать событие. Попробуйте позже.",
-                reply_markup=get_back_keyboard().as_markup()
+                reply_markup=get_create_event_keyboard(data).as_markup()
             )
+            await state.set_state(CreateEvent.main_menu)
             logger.error(f"Не удалось создать событие: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
 
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в finish_event_creation: {e}", exc_info=True)
+        tomorrow = datetime.now() + timedelta(days=1)
+        await state.update_data(
+            date=tomorrow.strftime("%Y-%m-%d"),
+            date_changed=False
+        )
         await callback.message.edit_text(
             "Произошла ошибка при создании события. Попробуйте позже.",
-            reply_markup=get_back_keyboard().as_markup()
+            reply_markup=get_create_event_keyboard(data).as_markup()
         )
-        await state.clear()
+        await state.set_state(CreateEvent.main_menu)
         await callback.answer()
 
 async def show_topics_and_queues_menu(callback: CallbackQuery, state: FSMContext):
