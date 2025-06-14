@@ -72,7 +72,12 @@ def get_create_event_keyboard(data: dict) -> InlineKeyboardBuilder:
     queue_slots = data.get("queue_slots")
     topic_list_data = data.get("topic_list_data", {"topics": []})
     topics_count = len(topic_list_data["topics"])
-    topics_button_text = f"{topics_count} Тем" if topics_count > 0 else "Темы и очереди"
+    if queue_slots:
+        topics_button_text = f"Очередь: {queue_slots}"
+    elif topics_count > 0:
+        topics_button_text = f"{topics_count} Тем"
+    else:
+        topics_button_text = "Темы и очереди"
     keyboard.button(text=importance_text, callback_data="edit_importance")
     keyboard.button(text=topics_button_text, callback_data="edit_topics_and_queues")
     # Четвертый ряд: Отмена, Готово
@@ -475,6 +480,7 @@ async def add_queue(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 @router.message(CreateEvent.waiting_for_queue_slots)
+@router.message(CreateEvent.waiting_for_queue_slots)
 async def process_queue_slots(message: Message, state: FSMContext):
     """Сохраняет количество мест в очереди и обновляет меню."""
     try:
@@ -490,6 +496,7 @@ async def process_queue_slots(message: Message, state: FSMContext):
 
         data = await state.get_data()
         data["queue_slots"] = max_slots
+        data["topic_list_data"] = {"topics": [], "max_participants_per_topic": 1}  # Сбрасываем темы при добавлении очереди
         last_message_id = data.get("last_message_id")
         if last_message_id:
             await message.bot.delete_message(chat_id=message.chat.id, message_id=last_message_id)
@@ -502,7 +509,7 @@ async def process_queue_slots(message: Message, state: FSMContext):
         logger.error(f"Ошибка в process_queue_slots: {e}")
         await state.clear()
         await message.answer("Произошла ошибка. Попробуйте позже.")
-
+        
 @router.callback_query(F.data == "finish_event_creation")
 async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user_repo: UserRepo, group_repo: GroupRepo):
     """Завершает создание события."""
