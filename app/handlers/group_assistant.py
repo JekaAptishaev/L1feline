@@ -155,12 +155,12 @@ async def start_create_event(message: Message, state: FSMContext, user_repo: Use
             is_important=False,
             date=tomorrow.strftime("%Y-%m-%d"),
             date_changed=False,
-            topic_list_data={"topics": []}  # Инициализируем пустой список тем
+            topic_list_data={"topics": [], "max_participants_per_topic": 1}
         )
         keyboard = get_create_event_keyboard({
             "date": tomorrow.strftime("%Y-%m-%d"),
             "date_changed": False,
-            "topic_list_data": {"topics": []}
+            "topic_list_data": {"topics": [], "max_participants_per_topic": 1}
         })
         await message.answer("Создание события", reply_markup=keyboard.as_markup())
     except Exception as e:
@@ -440,7 +440,7 @@ async def edit_topics_and_queues(callback: CallbackQuery, state: FSMContext):
     """Обрабатывает запрос на редактирование тем и очередей."""
     try:
         data = await state.get_data()
-        topic_list_data = data.get("topic_list_data", {"topics": []})
+        topic_list_data = data.get("topic_list_data", {"topics": [], "max_participants_per_topic": 1})
         topics_count = len(topic_list_data["topics"])
         await state.set_state(CreateEvent.waiting_for_topics_and_queues)
         keyboard = get_topics_and_queues_keyboard(topics_count)
@@ -460,7 +460,7 @@ async def edit_topics_and_queues(callback: CallbackQuery, state: FSMContext):
 async def add_queue(callback: CallbackQuery, state: FSMContext):
     """Обрабатывает запрос на создание очереди."""
     try:
-        await state.update_data(topic_list_data={"topics": []})  # Сбрасываем темы
+        await state.update_data(topic_list_data={"topics": [], "max_participants_per_topic": 1})  # Сбрасываем темы
         await state.set_state(CreateEvent.waiting_for_queue_slots)
         msg = await callback.message.edit_text(
             "Введите количество мест в очереди (число):",
@@ -559,7 +559,7 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
         description = data.get("description")
         is_important = data.get("is_important", False)
         queue_slots = data.get("queue_slots")
-        topic_list_data = data.get("topic_list_data", {"topics": []})
+        topic_list_data = data.get("topic_list_data", {"topics": [], "max_participants_per_topic": 1})
 
         # Создание события
         event = await group_repo.create_event(
@@ -583,11 +583,12 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
                 Topic(id=str(uuid4()), topic_list_id=topic_list_id, title=topic["title"], description=topic["description"])
                 for topic in topic_list_data["topics"]
             ]
+            max_participants = topic_list_data.get("max_participants_per_topic", 1)
             topic_list = TopicList(
                 id=topic_list_id,
                 event_id=str(event.id),
-                title="Список тем",  # Можно запросить у пользователя
-                max_participants_per_topic=10,  # Значение по умолчанию
+                title="Список тем",
+                max_participants_per_topic=max_participants,
                 created_by_user_id=created_by_user_id,
                 topics=topics
             )
@@ -602,7 +603,7 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
             if queue_slots:
                 success_message += f" Очередь на {queue_slots} мест создана."
             if topic_list_data["topics"]:
-                success_message += f" Создан список из {len(topic_list_data['topics'])} тем."
+                success_message += f" Создан список из {len(topic_list_data['topics'])} тем с максимум {max_participants} участниками на тему."
             await callback.message.answer(success_message, reply_markup=reply_markup)
             logger.info(f"Событие создано: {title}, user_id: {created_by_user_id}, group_id: {group_id}")
         else:
@@ -636,12 +637,11 @@ async def finish_event_creation(callback: CallbackQuery, state: FSMContext, user
 async def show_topics_and_queues_menu(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
-        topic_list_data = data.get("topic_list_data", {"topics": []})
+        topic_list_data = data.get("topic_list_data", {"topics": [], "max_participants_per_topic": 1})
         topics_count = len(topic_list_data["topics"])
         keyboard = get_topics_and_queues_keyboard(topics_count)
         warning_text = "\nНажатие на кнопку 'Добавить очередь' сотрёт все темы." if topics_count > 0 else ""
         text = f"{topics_count} Тем{warning_text}" if topics_count > 0 else "Темы и очереди"
-        # Проверяем, существует ли сообщение для редактирования
         try:
             await callback.message.edit_text(text, reply_markup=keyboard.as_markup())
         except Exception as e:
